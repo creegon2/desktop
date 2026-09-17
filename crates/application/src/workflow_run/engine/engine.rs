@@ -447,7 +447,8 @@ where
     ///
     /// Returns whether any transition committed (so the caller reloads and re-plans). The plan
     /// is pure; execution goes through the repository's atomic composite operations, and any
-    /// rows the plan started are dispatched to their async runtimes before returning.
+    /// rows the plan started are dispatched to their async runtimes against a context reloaded
+    /// after that commit, so round bindings are visible to prompt rendering.
     fn advance_composites(
         &self,
         run_id: &WorkflowRunId,
@@ -486,16 +487,19 @@ where
             };
             let started = self
                 .execute_composite_plan(run_id, graph, context, node_run, node_runs, plan, now)?;
-            if started.is_some() {
+            if let Some((_, started_runs)) = started {
                 self.run_events.publish_run_invalidated(run_id);
-                // Dispatch the rows this plan started to their background drivers.
-                if let Some((_, started_runs)) = started {
+                if !started_runs.is_empty() {
+                    // Round bindings commit in the same transaction as these rows. The context
+                    // loaded at the start of this pass does not include them, and the real
+                    // executor renders prompts from `context.run.payload`.
+                    let context = self.execution_context(run_id)?;
                     for planned in &started_runs {
                         if let Some(started_node) = graph.node(&planned.node_id)
                             && let Some(RegisteredNodeRuntime::Async(runtime)) =
                                 self.runtimes.runtime(started_node.node_type)
                         {
-                            runtime.dispatch(&planned.id, started_node, context);
+                            runtime.dispatch(&planned.id, started_node, &context);
                         }
                     }
                 }
@@ -568,21 +572,31 @@ where
                 entry,
                 continuation,
             } => {
-                let continuation = match continuation {
+                let (continuation, started_rows) = match continuation {
                     CompositeContinuation::StartNextRound {
-                        round,
+                        round: next_round,
                         item,
                         node_ids,
-                    } => IterationRoundContinuation::StartNextRound {
-                        round,
-                        item,
-                        node_runs: materialize(Some(round), &node_ids),
-                    },
-                    CompositeContinuation::Complete { exposed, output } => {
-                        IterationRoundContinuation::Complete { exposed, output }
+                    } => {
+                        // The next round's members are inserted in this same transaction; returning
+                        // them lets the caller dispatch against the payload that now holds the new
+                        // `{iter}.item` / `{iter}.index` bindings.
+                        let rows = materialize(Some(next_round), &node_ids);
+                        (
+                            IterationRoundContinuation::StartNextRound {
+                                round: next_round,
+                                item,
+                                node_runs: rows.clone(),
+                            },
+                            rows,
+                        )
                     }
+                    CompositeContinuation::Complete { exposed, output } => (
+                        IterationRoundContinuation::Complete { exposed, output },
+                        Vec::new(),
+                    ),
                     CompositeContinuation::Fail { error } => {
-                        IterationRoundContinuation::Fail { error }
+                        (IterationRoundContinuation::Fail { error }, Vec::new())
                     }
                 };
                 let result = self.repository.settle_iteration_round(
@@ -594,7 +608,7 @@ where
                     now,
                 )?;
                 Ok(matches!(result, AdvanceWorkflowRunResult::Advanced)
-                    .then_some((None, Vec::new())))
+                    .then_some((None, started_rows)))
             }
             CompositeAdvancePlan::CompleteNode { exposed, output } => {
                 let result = self.repository.complete_iteration_node(

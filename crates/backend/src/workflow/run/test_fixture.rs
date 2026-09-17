@@ -64,6 +64,30 @@ impl NodeExecutor for NoopExecutor {
     }
 }
 
+/// Records the prompt text `drive_agent_node` would send, by sharing its payload renderer.
+///
+/// Iteration tests that complete member rows by hand never render `{{#iter.item#}}` against the
+/// dispatched context; this executor does, so a stale post-round-start payload fails the same
+/// way as the real desktop agent.
+#[derive(Clone, Default)]
+pub(crate) struct RecordingPromptExecutor {
+    pub prompts: Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl NodeExecutor for RecordingPromptExecutor {
+    fn dispatch(
+        &self,
+        _node_run_id: &WorkflowNodeRunId,
+        node: &WorkflowGraphNode,
+        context: &ExecutionContext,
+    ) {
+        let prompt =
+            super::executor::render_agent_node_prompt(node, context.run.payload.as_deref())
+                .unwrap_or_else(|error| panic!("{error}"));
+        self.prompts.lock().expect("prompt log").push(prompt);
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct SeqGen {
     next: Cell<u64>,

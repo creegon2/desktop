@@ -317,11 +317,7 @@ async fn drive_agent_node(
         let mut rendered_node = node.clone();
         if let Some(agent_config) = rendered_node.agent_config.as_mut() {
             agent_config.prompt =
-                render_variable_template(&config.prompt, &run_payload.variable_pool)
-                    .map_err(|source| NodeExecutionError::PromptTemplate {
-                        node_id: node.id.clone(),
-                        source,
-                    })?;
+                render_agent_node_prompt(node, context.run.payload.as_deref())?;
         }
 
         // Assemble one explicit workflow handoff while preserving leading slash-command parsing.
@@ -481,6 +477,30 @@ fn parse_workflow_run_payload(
     payload
         .and_then(|payload| serde_json::from_str(payload).ok())
         .ok_or(NodeExecutionError::InvalidRunPayload)
+}
+
+/// Renders an agent node's prompt template against the dispatched run payload.
+///
+/// `drive_agent_node` and the test recording executor share this so iteration members are
+/// asserted against the same renderer the real session driver uses. Round bindings must already
+/// be in that payload, or this fails with the production `prompt_template` error.
+pub(super) fn render_agent_node_prompt(
+    node: &WorkflowGraphNode,
+    payload: Option<&str>,
+) -> Result<String, NodeExecutionError> {
+    let config =
+        node.agent_config
+            .as_ref()
+            .ok_or_else(|| NodeExecutionError::MissingAgentConfig {
+                node_id: node.id.clone(),
+            })?;
+    let run_payload = parse_workflow_run_payload(payload)?;
+    render_variable_template(&config.prompt, &run_payload.variable_pool).map_err(|source| {
+        NodeExecutionError::PromptTemplate {
+            node_id: node.id.clone(),
+            source,
+        }
+    })
 }
 
 /// Reports one finished turn to the engine according to the confirmed stop-reason mapping.
