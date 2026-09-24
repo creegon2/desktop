@@ -182,6 +182,103 @@ describe("RunActInspector agent config", () => {
   });
 });
 
+/** The shared Agent fixture with extra snapshot settings merged into its contract. */
+function agentDataWith(
+  patch: Partial<NonNullable<WorkflowNodeData["agentConfig"]>>,
+): WorkflowNodeData {
+  return {
+    ...AGENT_DATA,
+    agentConfig: { ...AGENT_DATA.agentConfig!, ...patch },
+  };
+}
+
+describe("RunActInspector retry settings", () => {
+  it.each([
+    {
+      name: "the implicit default when the snapshot has no retry",
+      locale: "zh-CN" as const,
+      data: AGENT_DATA,
+      label: "失败自动重试",
+      text: "默认：最多重试 2 次，首次等待 10 秒",
+    },
+    {
+      name: "the implicit default in English",
+      locale: "en-US" as const,
+      data: AGENT_DATA,
+      label: "Retry on failure",
+      text: "Default: up to 2 retries, first wait 10 s",
+    },
+    {
+      name: "custom values",
+      locale: "zh-CN" as const,
+      data: agentDataWith({
+        retry: { enabled: true, maxRetries: 4, initialDelaySeconds: 30 },
+      }),
+      label: "失败自动重试",
+      text: "最多重试 4 次，首次等待 30 秒",
+    },
+    {
+      name: "a single custom retry with singular English copy",
+      locale: "en-US" as const,
+      data: agentDataWith({
+        retry: { enabled: true, maxRetries: 1, initialDelaySeconds: 5 },
+      }),
+      label: "Retry on failure",
+      text: "Up to 1 retry, first wait 5 s",
+    },
+    {
+      name: "a turned-off policy",
+      locale: "zh-CN" as const,
+      data: agentDataWith({
+        retry: { enabled: false, maxRetries: 2, initialDelaySeconds: 10 },
+      }),
+      label: "失败自动重试",
+      text: "已关闭",
+    },
+    {
+      name: "an enabled policy with zero retries",
+      locale: "zh-CN" as const,
+      data: agentDataWith({
+        retry: { enabled: true, maxRetries: 0, initialDelaySeconds: 10 },
+      }),
+      label: "失败自动重试",
+      text: "不重试（最多重试次数为 0）",
+    },
+    {
+      name: "an enabled policy with zero retries in English",
+      locale: "en-US" as const,
+      data: agentDataWith({
+        retry: { enabled: true, maxRetries: 0, initialDelaySeconds: 10 },
+      }),
+      label: "Retry on failure",
+      text: "Not retried (max retries is 0)",
+    },
+    {
+      name: "an interactive node",
+      locale: "zh-CN" as const,
+      data: agentDataWith({
+        interactive: true,
+        retry: { enabled: true, maxRetries: 3, initialDelaySeconds: 10 },
+      }),
+      label: "失败自动重试",
+      text: "不重试（交互模式节点）",
+    },
+    {
+      name: "an interactive node in English",
+      locale: "en-US" as const,
+      data: agentDataWith({ interactive: true }),
+      label: "Retry on failure",
+      text: "Not retried (interactive node)",
+    },
+  ])("shows $name", async ({ locale, data, label, text }) => {
+    await appI18n.changeLanguage(locale);
+    renderInspector({ status: "succeeded" }, { data });
+
+    const heading = await screen.findByText(label);
+    expect(heading.nextElementSibling?.textContent).toBe(text);
+  });
+});
+
 describe("RunActInspector failure detail", () => {
   it("renders the kind title, hint, and attempt line for a failed node", async () => {
     await appI18n.changeLanguage("zh-CN");

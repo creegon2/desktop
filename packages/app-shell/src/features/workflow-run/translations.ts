@@ -177,6 +177,17 @@ export const workflowRunTranslations = {
     "workflowRun.inspector.mcpOpen": "查看 MCP「{{name}}」简介",
     "workflowRun.inspector.textOpen": "查看完整{{field}}",
     "workflowRun.inspector.catalogNoDescription": "暂无简介",
+    "workflowRun.inspector.retryDefault_one":
+      "默认：最多重试 {{count}} 次，首次等待 {{seconds}} 秒",
+    "workflowRun.inspector.retryDefault_other":
+      "默认：最多重试 {{count}} 次，首次等待 {{seconds}} 秒",
+    "workflowRun.inspector.retryConfigured_one":
+      "最多重试 {{count}} 次，首次等待 {{seconds}} 秒",
+    "workflowRun.inspector.retryConfigured_other":
+      "最多重试 {{count}} 次，首次等待 {{seconds}} 秒",
+    "workflowRun.inspector.retryDisabled": "已关闭",
+    "workflowRun.inspector.retryNone": "不重试（最多重试次数为 0）",
+    "workflowRun.inspector.retryInteractive": "不重试（交互模式节点）",
     "workflowRun.inspector.saveDraft": "保存",
     "workflowRun.inspector.savingDraft": "保存中…",
     "workflowRun.inspector.discardDraft": "放弃",
@@ -524,6 +535,17 @@ export const workflowRunTranslations = {
     "workflowRun.inspector.mcpOpen": "View brief for MCP “{{name}}”",
     "workflowRun.inspector.textOpen": "View full {{field}}",
     "workflowRun.inspector.catalogNoDescription": "No description available",
+    "workflowRun.inspector.retryDefault_one":
+      "Default: up to {{count}} retry, first wait {{seconds}} s",
+    "workflowRun.inspector.retryDefault_other":
+      "Default: up to {{count}} retries, first wait {{seconds}} s",
+    "workflowRun.inspector.retryConfigured_one":
+      "Up to {{count}} retry, first wait {{seconds}} s",
+    "workflowRun.inspector.retryConfigured_other":
+      "Up to {{count}} retries, first wait {{seconds}} s",
+    "workflowRun.inspector.retryDisabled": "Off",
+    "workflowRun.inspector.retryNone": "Not retried (max retries is 0)",
+    "workflowRun.inspector.retryInteractive": "Not retried (interactive node)",
     "workflowRun.inspector.saveDraft": "Save",
     "workflowRun.inspector.savingDraft": "Saving…",
     "workflowRun.inspector.discardDraft": "Discard",

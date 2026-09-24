@@ -622,6 +622,7 @@ describe("Agent retry settings", () => {
 });
 
 describe("retry translations", () => {
+  // Plural keys are listed per form because each language owns its own plural categories.
   const keys = [
     "settings.workflow.field.retry",
     "settings.workflow.field.retryMaxRetries",
@@ -634,6 +635,13 @@ describe("retry translations", () => {
     "settings.workflow.retry.issue.missing",
     "settings.workflow.retry.issue.notInteger",
     "settings.workflow.retry.issue.outOfRange",
+    "workflowRun.inspector.retryDefault_one",
+    "workflowRun.inspector.retryDefault_other",
+    "workflowRun.inspector.retryConfigured_one",
+    "workflowRun.inspector.retryConfigured_other",
+    "workflowRun.inspector.retryDisabled",
+    "workflowRun.inspector.retryNone",
+    "workflowRun.inspector.retryInteractive",
   ] as const;
 
   it("ships every retry string in both languages", () => {
