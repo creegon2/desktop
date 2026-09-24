@@ -28,6 +28,16 @@ const ACP_JOURNAL: &str = "acp_calls.txt";
 /// environment of its own, and a test must not mutate its own.
 const LOAD_REFUSAL_MARKER: &str = "refuse_session_load";
 
+/// Prompt marker `[fail-times:N]`: the first N prompts carrying it answer with a JSON-RPC error.
+///
+/// Stands in for an agent whose session breaks a set number of times, so workflow tests can
+/// drive automatic retries through the real session driver.
+const FAIL_TIMES_MARKER: &str = "[fail-times:";
+
+/// Journal of prompts failed on purpose, one marker per line, so the count survives new
+/// sessions and a restarted plugin process alike.
+const PROMPT_FAILURE_JOURNAL: &str = "prompt_failures.txt";
+
 /// One fake session retained for the life of the plugin process.
 #[derive(Debug, Clone)]
 struct FakeSession {
@@ -300,6 +310,9 @@ impl FakeAcpAgent {
             })
             .collect::<Vec<_>>()
             .join("\n");
+        if let Some(error) = planned_prompt_failure(&prompt) {
+            return Err(error);
+        }
         let response = if prompt.contains("## Previous attempt") || prompt.contains("## 上一次尝试")
         {
             r#"{"ok":true}"#.to_string()
@@ -376,6 +389,37 @@ fn record_acp_call(method: &str, session_id: &str) {
     {
         let _ = writeln!(file, "{method} {session_id}");
     }
+}
+
+/// Fails this prompt when it carries `[fail-times:N]` and fewer than N prompts with the same
+/// marker have failed so far.
+fn planned_prompt_failure(prompt: &str) -> Option<AcpError> {
+    let start = prompt.find(FAIL_TIMES_MARKER)?;
+    let length = prompt[start..].find(']')? + 1;
+    let marker = &prompt[start..start + length];
+    let times: usize = marker[FAIL_TIMES_MARKER.len()..length - 1].parse().ok()?;
+    let failed = std::fs::read_to_string(PROMPT_FAILURE_JOURNAL)
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| *line == marker)
+        .count();
+    if failed >= times {
+        return None;
+    }
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(PROMPT_FAILURE_JOURNAL)
+    {
+        let _ = writeln!(file, "{marker}");
+    }
+    Some(AcpError {
+        code: INTERNAL_ERROR_CODE,
+        message: format!(
+            "fake agent failed prompt {} of {times} on purpose",
+            failed + 1
+        ),
+    })
 }
 
 /// Returns the one model marked as the discovery default.

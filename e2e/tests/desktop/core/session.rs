@@ -5,6 +5,7 @@ mod tests {
     mod lifecycle;
     mod workflow_mcp;
     mod workflow_resume;
+    mod workflow_retry;
 
     use crate::setup::DesktopTestSetup;
     use agent_client_protocol_schema::v1::{

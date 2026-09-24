@@ -21,7 +21,13 @@ mod recovery;
 mod resume_gap_tests;
 #[cfg(test)]
 mod resume_tests;
+#[cfg(test)]
+mod retry_composite_tests;
+#[cfg(test)]
+mod retry_tests;
 mod retry_timer;
+#[cfg(test)]
+mod retry_timer_tests;
 mod rollback;
 #[cfg(test)]
 mod rollback_content_tests;
