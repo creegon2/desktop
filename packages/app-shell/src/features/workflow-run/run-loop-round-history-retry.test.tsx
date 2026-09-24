@@ -93,7 +93,13 @@ describe("RunLoopRoundHistory with a waiting retry", () => {
     );
 
     const waitingRow = row("评审");
-    expect(waitingRow).toHaveTextContent(/^评审12 秒后开始等待重试$/);
+    expect(waitingRow.textContent).toBe(
+      "评审等待重试（第 2/3 次）12 秒后开始等待重试",
+    );
+    // Screen readers get the attempt count, which the compact countdown leaves out.
+    expect(within(waitingRow).getByText("等待重试（第 2/3 次）")).toHaveClass(
+      "sr-only",
+    );
     expect(within(waitingRow).getByText("12 秒后开始")).toHaveAttribute(
       "data-retry-wait",
       "compact",
@@ -109,12 +115,14 @@ describe("RunLoopRoundHistory with a waiting retry", () => {
     expect(writerRow).toHaveTextContent(/^撰写session-w2成功$/);
     expect(within(writerRow).getByTitle("session-w2")).toBeInTheDocument();
     expect(writerRow.querySelector("[data-retry-wait]")).toBeNull();
+    expect(writerRow.querySelector(".sr-only")).toBeNull();
 
     // The same node in an earlier round shows its own failed state and session.
     await user.click(screen.getByRole("tab", { name: "第 1 轮" }));
     const failedRow = row("评审");
     expect(failedRow).toHaveTextContent(/^评审session-r1失败$/);
     expect(failedRow.querySelector("[data-retry-wait]")).toBeNull();
+    expect(failedRow.querySelector(".sr-only")).toBeNull();
     expect(row("撰写")).toHaveTextContent(/^撰写session-w1成功$/);
   });
 });
