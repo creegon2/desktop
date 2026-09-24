@@ -162,7 +162,7 @@ export type PreviewWorkflowRunResumeResponse = {
   nodeFilesAvailable: boolean;
   /**
    * `"no_file_changes"` when a failed node has no checkpoint / recorded changes;
-   * `"composite_region"` when the resume unit is an iteration composite.
+   * `"composite_region"` when the resume unit is a composite (Iteration or Loop).
    */
   nodeFilesUnavailableReason: string | null;
   /**
@@ -222,7 +222,8 @@ export type ResumeFailedNodePreview = {
    */
   changedSinceCheckpoint: Array<WorkflowFileChange>;
   /**
-   * Owning composite node id when this row belongs to an iteration resume unit.
+   * Owning composite node id (Iteration or Loop) when this row belongs to a composite resume
+   * unit: a region member, a Loop body node, or the composite itself.
    */
   resumeUnitNodeId?: string;
 };

@@ -88,7 +88,7 @@ pub use workflow_run::{
     WorkflowRunPayload, WorkflowRunPayloadError, WorkflowRunRepository,
     WorkflowRunWorkspaceInitializer, WorkflowValidationError, WorkflowVariablePool,
     WorkflowVariablePoolError, WorkspaceRepository, extract_json_object, plan_snapshot_switch,
-    render_variable_template, resume_clear_node_ids, resume_unit_owner_id,
+    render_variable_template, resume_clear_node_ids, resume_unit_member_ids, resume_unit_owner_id,
     running_row_blocks_resume, validate_against_schema,
 };
 pub use workspace_diff::{
