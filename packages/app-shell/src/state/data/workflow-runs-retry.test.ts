@@ -485,6 +485,68 @@ describe("buildDisplayRun retry outcome", () => {
   });
 });
 
+describe("buildDisplayRun retries that never started", () => {
+  // Attempt 2 of `explore` was scheduled by retry 1 and never started; its predecessor (attempt 1)
+  // must not be shown as retried, whatever ended the wait.
+  const unstarted = (
+    overrides: Partial<NodeRow>,
+    retryWait: Record<string, unknown> | undefined,
+  ) =>
+    buildDisplayRun(
+      runDetail(
+        [
+          START_ROW,
+          nodeRow("explore", {
+            finishedAt: ms(32_000),
+            ...overrides,
+            payload: payload({
+              ...(retryWait !== undefined ? { retry_wait: retryWait } : {}),
+              auto_retry: { retry: 1, max_retries: 3 },
+            }),
+          }),
+        ],
+        { failedAttempts: [persistedAttempt(EXPLORE_1)] },
+      ),
+      PARALLEL_GRAPH,
+    ).nodeStates.explore?.failedAttempts;
+
+  const WAIT_ATTEMPT_2 = {
+    ...RETRY_WAIT_ATTEMPT_3,
+    attempt: 2,
+    retry: 1,
+  };
+
+  it.each([
+    ["still waiting", { status: "running", finishedAt: null }, WAIT_ATTEMPT_2],
+    ["cancelled by the user while waiting", { status: "cancelled" }, undefined],
+    [
+      "abandoned by a run failure while waiting",
+      { status: "cancelled", error: '{"reason":"retry_abandoned"}' },
+      undefined,
+    ],
+    [
+      "failed by an app restart while waiting",
+      { status: "failed", error: '{"reason":"interrupted_by_restart"}' },
+      undefined,
+    ],
+  ] as const)(
+    "marks the attempt before a retry %s as scheduled, not retried",
+    (_label, overrides, retryWait) => {
+      expect(unstarted(overrides, retryWait)).toStrictEqual([
+        shownAttempt(EXPLORE_1, { replacedBy: "automatic_retry_scheduled" }),
+      ]);
+    },
+  );
+
+  it("marks it as retried once the retry started", () => {
+    expect(
+      unstarted({ status: "failed", startedAt: ms(31_000) }, undefined),
+    ).toStrictEqual([
+      shownAttempt(EXPLORE_1, { replacedBy: "automatic_retry" }),
+    ]);
+  });
+});
+
 describe("buildDisplayRun failed attempts", () => {
   it("attaches each node's failed attempts oldest first with replacement marks", () => {
     const display = buildDisplayRun(
@@ -526,7 +588,7 @@ describe("buildDisplayRun failed attempts", () => {
 
     expect(display.nodeStates.explore.failedAttempts).toStrictEqual([
       shownAttempt(EXPLORE_1, { replacedBy: "automatic_retry" }),
-      shownAttempt(EXPLORE_2, { replacedBy: "automatic_retry" }),
+      shownAttempt(EXPLORE_2, { replacedBy: "automatic_retry_scheduled" }),
     ]);
     expect(display.nodeStates.review.failedAttempts).toStrictEqual([
       shownAttempt(REVIEW_1, { replacedBy: "manual_resume" }),
@@ -611,7 +673,7 @@ describe("buildDisplayRun failed attempts", () => {
       failedAttempts: [
         shownAttempt(fixRound1, {
           iteration: 1,
-          replacedBy: "automatic_retry",
+          replacedBy: "automatic_retry_scheduled",
         }),
       ],
     };
@@ -752,7 +814,7 @@ describe("buildDisplayRun failed attempts", () => {
           failedAttempts: [
             shownAttempt(childRound1, {
               loopRoundIndex: 1,
-              replacedBy: "automatic_retry",
+              replacedBy: "automatic_retry_scheduled",
             }),
           ],
         },
@@ -793,7 +855,7 @@ describe("buildDisplayRun failed attempts", () => {
 
     expect(display.nodeStates.explore.failedAttempts).toStrictEqual([
       shownAttempt(EXPLORE_1, { beforeRestart: true }),
-      shownAttempt(EXPLORE_2, { replacedBy: "automatic_retry" }),
+      shownAttempt(EXPLORE_2, { replacedBy: "automatic_retry_scheduled" }),
     ]);
   });
 

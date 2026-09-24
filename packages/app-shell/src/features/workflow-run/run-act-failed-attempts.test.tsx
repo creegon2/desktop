@@ -220,6 +220,25 @@ describe("RunActFailedAttempts", () => {
     expect(present(entry(3))).toEqual(["从头重新运行前"]);
   });
 
+  it("says a scheduled retry that never started was not a retry", async () => {
+    const scheduled: WorkflowNodeAttemptFailure = {
+      ...ATTEMPTS[0],
+      replacedBy: "automatic_retry_scheduled",
+    };
+    renderAttempts([scheduled]);
+    const chip = within(entry(1)).getByText("已安排自动重试（未开始）");
+    expect(within(entry(1)).queryByText("已自动重试")).not.toBeInTheDocument();
+    // Only a retry that ran shares the waiting state's orange.
+    expect(chip.className).not.toContain("orange");
+
+    cleanup();
+    await appI18n.changeLanguage("en-US");
+    renderAttempts([scheduled]);
+    expect(
+      within(entry(1)).getByText("Automatic retry scheduled (not started)"),
+    ).toBeInTheDocument();
+  });
+
   it("labels the time from start to finish, or the recorded time without a start", () => {
     renderAttempts(ATTEMPTS);
     expect(

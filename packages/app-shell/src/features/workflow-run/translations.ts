@@ -353,6 +353,8 @@ export const workflowRunTranslations = {
       "上一次尝试失败，Ora 会自动重新运行这个节点；新一次尝试开始后，这里会显示它的会话。",
     "workflowRun.failedAttempts.title": "之前失败的尝试",
     "workflowRun.failedAttempts.replacedByRetry": "已自动重试",
+    "workflowRun.failedAttempts.replacedByScheduledRetry":
+      "已安排自动重试（未开始）",
     "workflowRun.failedAttempts.replacedByResume": "已手动续跑",
     "workflowRun.failedAttempts.beforeRestart": "从头重新运行前",
     "workflowRun.failedAttempts.rootCause": "底层原因",
@@ -360,6 +362,7 @@ export const workflowRunTranslations = {
     "workflowRun.retry.exhausted_one": "已自动重试 {{count}} 次，仍然失败",
     "workflowRun.retry.exhausted_other": "已自动重试 {{count}} 次，仍然失败",
     "workflowRun.retry.abandoned": "运行在等待自动重试时结束，这次重试没有开始",
+    "workflowRun.retry.notStarted": "这次自动重试已安排，但没有开始",
   },
   "en-US": {
     "errors.workflow_no_published_snapshot":
@@ -750,6 +753,8 @@ export const workflowRunTranslations = {
       "The last attempt failed and Ora will run this node again by itself; the new attempt's session appears here once it starts.",
     "workflowRun.failedAttempts.title": "Earlier failed attempts",
     "workflowRun.failedAttempts.replacedByRetry": "Retried automatically",
+    "workflowRun.failedAttempts.replacedByScheduledRetry":
+      "Automatic retry scheduled (not started)",
     "workflowRun.failedAttempts.replacedByResume": "Resumed manually",
     "workflowRun.failedAttempts.beforeRestart": "Before “Run again from start”",
     "workflowRun.failedAttempts.rootCause": "Underlying error",
@@ -760,5 +765,7 @@ export const workflowRunTranslations = {
       "Retried automatically {{count}} times, still failed",
     "workflowRun.retry.abandoned":
       "The run ended while this node was waiting to retry, so the retry never started",
+    "workflowRun.retry.notStarted":
+      "This automatic retry was scheduled but never started",
   },
 } as const;

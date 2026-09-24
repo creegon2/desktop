@@ -43,6 +43,10 @@ const RETRY_STRINGS: Record<string, { "zh-CN": string; "en-US": string }> = {
     "zh-CN": "已自动重试",
     "en-US": "Retried automatically",
   },
+  "workflowRun.failedAttempts.replacedByScheduledRetry": {
+    "zh-CN": "已安排自动重试（未开始）",
+    "en-US": "Automatic retry scheduled (not started)",
+  },
   "workflowRun.failedAttempts.replacedByResume": {
     "zh-CN": "已手动续跑",
     "en-US": "Resumed manually",
@@ -66,6 +70,10 @@ const RETRY_STRINGS: Record<string, { "zh-CN": string; "en-US": string }> = {
   "workflowRun.retry.exhausted_other": {
     "zh-CN": "已自动重试 {{count}} 次，仍然失败",
     "en-US": "Retried automatically {{count}} times, still failed",
+  },
+  "workflowRun.retry.notStarted": {
+    "zh-CN": "这次自动重试已安排，但没有开始",
+    "en-US": "This automatic retry was scheduled but never started",
   },
   "workflowRun.retry.abandoned": {
     "zh-CN": "运行在等待自动重试时结束，这次重试没有开始",
