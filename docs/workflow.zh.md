@@ -204,8 +204,10 @@ Start 表单控件与变量类型分离：文本、段落、选择框、数字�
 `structured_output`、`agent_refusal`、`unknown_stop_reason`、`multiple_outputs`。
 
 续跑会软删除失败/取消的节点运行及其全部后继（`is_deleted = 1`），再从幸存状态重新调度。
-尝试次数按 `(run_id, node_id, iteration)` 统计软删除前驱（外层行为 `iteration IS NULL`）。
-`find_last_failed_attempt` 使用同一作用域。
+尝试次数按 `(run_id, node_id, iteration)` 统计软删除前驱（外层行为 `iteration IS NULL`）；
+Loop 循环体的行只统计它所在那一轮的行，所以每一轮（包括 Loop 续跑后重跑的轮次）都从第 1 次
+开始编号。`find_last_failed_attempt` 按 `(run_id, node_id, iteration)` 查找，不限于当前轮，
+所以 Loop 续跑后的第一次尝试仍会拿到导致 Loop 失败的那次失败。
 
 每个节点开始前会在 `refs/ora/checkpoints/<node_run_id>` 记录 git 检查点。回滚前先把工作树
 存成 `pre-rollback-<run>-<ts>`，方便反悔。节点 payload 保存 `checkpoint`、
@@ -292,7 +294,8 @@ retry, max_retries, delay_ms, scheduled_at, due_at, previous_node_run_id}`。因
 
 一行已经用掉的重试次数记在 `payload.auto_retry = {retry, max_retries}`。没有该字段的行——
 第一次尝试、手动续跑的尝试、重启后的尝试——都从完整的次数重新开始，而
-`error_detail.attempt` 在它们之间持续累加（三次尝试都失败后续跑，接下来是第 4、5、6 次）。
+`error_detail.attempt` 在它们之间持续累加（三次尝试都失败后续跑，接下来是第 4、5、6 次）。在 Loop 内，重试次数额度和尝试编号每一轮都重新
+开始。
 
 以下情况会提前结束等待：
 
@@ -313,9 +316,10 @@ retry, max_retries, delay_ms, scheduled_at, due_at, previous_node_run_id}`。因
 行及其 `error_detail`），每项含 `nodeRunId`、`nodeId`、`scopeId`、`iteration`、`sessionId`、
 `attempt`、`kind`、`message`、`sourceChain`（即 `error_detail.source_chain`，由外到内；会话类
 失败的 `message` 是通用文字，智能体自己给出的原因在这里）、`recordedAt`、`startedAt`、
-`finishedAt`。尝试编号统计该节点（及 iteration）在本运行中所有软删除的行，不论状态；
+`finishedAt`。尝试编号统计该节点（及 iteration）在本运行中所有软删除的行（Loop 循环体的行只统计所在那一轮），
+不论状态；
 `failedAttempts` 只列出带有 `error_detail` 的软删除 `Failed` 行。两者在续跑和重启后都继续
-累加，而重试次数额度在两者之后都重新开始（见上文 `auto_retry`）。因此列表里的编号可能不连续：
+累加（Loop 循环体的编号每一轮重新开始，Loop 续跑后重跑的轮次也一样），而重试次数额度在两者之后都重新开始（见上文 `auto_retry`）。因此列表里的编号可能不连续：
 取消或放弃的尝试、被复合节点续跑清除的成功尝试、没有失败记录的失败行都会占用编号，但不会列出。
 
 #### 应用内的重试界面

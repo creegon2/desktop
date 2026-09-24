@@ -78,7 +78,8 @@ impl WorkflowRetryRepository for SqliteWorkflowRunEngineRepository {
                     params![failed_node_run_id.as_ref(), now],
                 )?;
                 let attempt =
-                    deleted_attempt_count(&transaction, &run_id, &node_id, iteration)?.saturating_add(1);
+                    deleted_attempt_count(&transaction, &run_id, &node_id, iteration, &scope_id)?
+                        .saturating_add(1);
                 let wait = NodeRetryWait {
                     attempt,
                     max_attempt: attempt

@@ -11,16 +11,25 @@ use super::retry::RETRY_WAIT_PATH;
 pub(super) const INTERRUPTED_BY_RESTART: &str = r#"{"reason":"interrupted_by_restart"}"#;
 
 /// Counts prior soft-deleted attempts of this `(node_id, iteration)` pair in the same run.
+///
+/// Inside a Loop round (`scope_id` is a round scope) only that round's rows count: Loop body rows
+/// carry no iteration, and like the retry budget each round numbers its attempts from 1. Rows in
+/// the root scope keep counting across the whole run, including earlier executions a restart
+/// replaced.
 pub(super) fn deleted_attempt_count(
     transaction: &Transaction<'_>,
     run_id: &str,
     node_id: &str,
     iteration: Option<u32>,
+    scope_id: &str,
 ) -> Result<u32, crate::DatabaseError> {
     let count: i64 = transaction.query_row(
         "SELECT COUNT(*) FROM workflow_node_runs
-         WHERE run_id = ?1 AND node_id = ?2 AND is_deleted = 1 AND iteration IS ?3",
-        params![run_id, node_id, iteration],
+         WHERE run_id = ?1 AND node_id = ?2 AND is_deleted = 1 AND iteration IS ?3
+           AND (scope_id = ?4 OR NOT EXISTS (
+               SELECT 1 FROM workflow_execution_scopes loop_round
+               WHERE loop_round.id = ?4 AND loop_round.parent_loop_node_run_id IS NOT NULL))",
+        params![run_id, node_id, iteration, scope_id],
         |row| row.get(0),
     )?;
     Ok(u32::try_from(count).unwrap_or(u32::MAX))
@@ -41,8 +50,9 @@ fn merge_error_detail(
 
 /// Marks one node-run `Failed` and writes `payload.error_detail` in the same UPDATE.
 ///
-/// Attempt numbering is scoped by `(run_id, node_id, iteration)` (R2). The round is read from
-/// the live row so this helper stays within the clippy argument limit.
+/// Attempt numbering is scoped by `(run_id, node_id, iteration)` (R2), and to the round inside a
+/// Loop (see [`deleted_attempt_count`]). The round is read from the live row so this helper stays
+/// within the clippy argument limit.
 pub(super) fn persist_failed_node_run(
     transaction: &Transaction<'_>,
     node_run_id: &str,
@@ -52,12 +62,13 @@ pub(super) fn persist_failed_node_run(
     current_payload: Option<&str>,
     now: i64,
 ) -> Result<(), crate::DatabaseError> {
-    let iteration: Option<u32> = transaction.query_row(
-        "SELECT iteration FROM workflow_node_runs WHERE id = ?1 AND is_deleted = 0",
+    let (iteration, scope_id): (Option<u32>, String) = transaction.query_row(
+        "SELECT iteration, scope_id FROM workflow_node_runs WHERE id = ?1 AND is_deleted = 0",
         params![node_run_id],
-        |row| row.get(0),
+        |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
-    let attempt = deleted_attempt_count(transaction, run_id, node_id, iteration)?.saturating_add(1);
+    let attempt = deleted_attempt_count(transaction, run_id, node_id, iteration, &scope_id)?
+        .saturating_add(1);
     let detail = NodeFailureDetail {
         kind: failure.kind,
         message: failure.message.clone(),

@@ -7,8 +7,8 @@
 use super::recovery::sweep_one_run;
 use super::retry_tests::{Dispatch, Harness, agent, graph, retry};
 use ora_application::{
-    NodeAutoRetry, NodeFailureKind, ResumeWorkflowRunResult, WorkflowRunEngineRepository,
-    WorkflowRunPayload,
+    NodeAutoRetry, NodeFailure, NodeFailureKind, ResumeWorkflowRunResult,
+    WorkflowRunEngineRepository, WorkflowRunPayload,
 };
 use ora_domain::{
     WorkflowNodeRun, WorkflowNodeRunId, WorkflowNodeStatus, WorkflowRunStatus, WorkflowScopeStatus,
@@ -421,12 +421,12 @@ fn a_retry_inside_a_loop_round_stays_in_that_round_and_later_rounds_inherit_noth
     assert_eq!(h.rows_of("loop")[0].status, WorkflowNodeStatus::Succeeded);
 }
 
-/// Loop rounds number attempts across rounds (Loop body rows carry no iteration, so attempt
-/// numbering counts every earlier attempt of the node in the run), but the retry budget belongs
-/// to the round: a writer that used one of its two retries in round 1 still gets both retries in
-/// round 2, and only a third failure in one round would exhaust it.
+/// Both the retry budget and the attempt numbers belong to the Loop round: a writer that used one
+/// of its two retries in round 1 starts round 2 at attempt 1 with both retries, and only a third
+/// failure in one round would exhaust it. The failure history and the block injected into a
+/// retry use the same round-local numbers.
 #[test]
-fn a_loop_member_gets_its_full_retry_budget_in_every_round() {
+fn a_loop_member_gets_its_full_retry_budget_and_fresh_attempt_numbers_in_every_round() {
     let h = Harness::start(&loop_graph(retry(true, 2, 1), /*sibling*/ None));
     let wait_tuple = |row: &WorkflowNodeRun| {
         let wait = Harness::wait_of(row).unwrap();
@@ -454,14 +454,24 @@ fn a_loop_member_gets_its_full_retry_budget_in_every_round() {
     );
     h.fail(&round_two.id, NodeFailureKind::Session, 4_000);
     let first_retry = h.running("writer");
-    // Attempt 3 of the run, but retry 1 of a fresh budget of 2 after the shorter first wait.
-    assert_eq!(wait_tuple(&first_retry), (3, 4, 1, 2, 1_000));
+    // Attempt 2 of round 2: retry 1 of a fresh budget of 2 after the shorter first wait.
+    assert_eq!(wait_tuple(&first_retry), (2, 3, 1, 2, 1_000));
     h.wake(&first_retry.id, 5_000);
-    h.fail(&first_retry.id, NodeFailureKind::Session, 6_000);
+    h.fail_with(
+        &first_retry.id,
+        NodeFailure::new(
+            NodeFailureKind::StructuredOutput,
+            "round two reply is not JSON",
+        ),
+        6_000,
+    );
     let second_retry = h.running("writer");
-    assert_eq!(wait_tuple(&second_retry), (4, 4, 2, 2, 2_000));
-    assert_eq!(h.run().status, WorkflowRunStatus::Running);
+    assert_eq!(wait_tuple(&second_retry), (3, 3, 2, 2, 2_000));
     h.wake(&second_retry.id, 8_000);
+    let prompt = h.prompt_for("writer");
+    assert!(prompt.contains("Previous attempt (2) failed"), "{prompt}");
+    assert!(prompt.contains("round two reply is not JSON"), "{prompt}");
+    assert_eq!(h.run().status, WorkflowRunStatus::Running);
     h.complete(&second_retry.id, "done", 9_000);
 
     assert_eq!(h.rows_of("loop")[0].status, WorkflowNodeStatus::Succeeded);
@@ -477,8 +487,58 @@ fn a_loop_member_gets_its_full_retry_budget_in_every_round() {
             .collect::<Vec<_>>(),
         vec![
             (round_one.scope_id.clone(), json!(1)),
+            (round_two.scope_id.clone(), json!(1)),
             (round_two.scope_id.clone(), json!(2)),
-            (round_two.scope_id.clone(), json!(3)),
+        ]
+    );
+}
+
+/// A Loop resume reruns the Loop from round 1 in new round scopes, so its body attempts number
+/// from 1 again instead of continuing from the rounds the resume cleared.
+#[test]
+fn a_loop_resume_numbers_body_attempts_from_one_again() {
+    let h = Harness::start(&loop_graph(retry(true, 1, 0), /*sibling*/ None));
+    h.fail(&h.running("writer").id, NodeFailureKind::Session, 1_000);
+    let retry_row = h.running("writer");
+    assert_eq!(Harness::wait_of(&retry_row).unwrap().attempt, 2);
+    h.wake(&retry_row.id, 2_000);
+    h.fail(&retry_row.id, NodeFailureKind::Session, 3_000);
+    assert_eq!(h.run().status, WorkflowRunStatus::Failed);
+
+    h.set_now(4_000);
+    assert_eq!(
+        h.engine.resume_from_failure(&h.run_id).unwrap(),
+        ResumeWorkflowRunResult::Resumed
+    );
+    let rerun = h.running("writer");
+    assert_ne!(rerun.scope_id, retry_row.scope_id);
+    h.fail(&rerun.id, NodeFailureKind::Session, 5_000);
+    let rerun_retry = h.running("writer");
+    let wait = Harness::wait_of(&rerun_retry).unwrap();
+    assert_eq!((wait.attempt, wait.max_attempt, wait.retry), (2, 2, 1));
+    h.wake(&rerun_retry.id, 6_000);
+    h.fail(&rerun_retry.id, NodeFailureKind::Session, 7_000);
+    assert_eq!(
+        (
+            Harness::error_detail(&h.rows_of("writer").pop().unwrap())["attempt"].clone(),
+            h.run().status
+        ),
+        (json!(2), WorkflowRunStatus::Failed)
+    );
+    assert_eq!(
+        h.detail()
+            .failed_attempts
+            .iter()
+            .filter(|row| row.node_id == "writer")
+            .map(|row| (
+                row.scope_id.clone(),
+                Harness::error_detail(row)["attempt"].clone()
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (retry_row.scope_id.clone(), json!(1)),
+            (retry_row.scope_id.clone(), json!(2)),
+            (rerun.scope_id.clone(), json!(1)),
         ]
     );
 }

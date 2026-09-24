@@ -255,7 +255,10 @@ Only agent-behaviour failures are injected into a later prompt (`injects_previou
 Resume soft-deletes the failed or cancelled node runs and all of their descendants
 (`is_deleted = 1`) and reschedules from the surviving state. Attempt numbering counts those
 soft-deleted predecessors per `(run_id, node_id, iteration)` (`iteration IS NULL` for outer
-rows). `find_last_failed_attempt` uses the same scope.
+rows); a Loop body row counts only the rows of its own Loop round, so every round, including the
+rounds a Loop resume reruns, numbers its attempts from 1. `find_last_failed_attempt` looks up
+`(run_id, node_id, iteration)` without the round restriction, so the first attempt after a Loop
+resume is still told about the failure that failed the Loop.
 
 Each node records a pre-node git checkpoint under `refs/ora/checkpoints/<node_run_id>` before
 it runs. Rollback first snapshots the worktree as `pre-rollback-<run>-<ts>` so the operator
@@ -363,7 +366,8 @@ separate mechanism and is unchanged.
 The retries a row has used ride on `payload.auto_retry = {retry, max_retries}`. Rows without it
 — a first attempt, a manually resumed attempt, an attempt after a restart — start a fresh
 budget, while `error_detail.attempt` keeps counting across all of them (a resume after three
-failed attempts runs attempts 4, 5, 6).
+failed attempts runs attempts 4, 5, 6). Inside a Loop both the budget and the numbering start
+over in every round.
 
 A wait ends early in these cases:
 
@@ -388,9 +392,10 @@ attempts (soft-deleted `Failed` rows with their `error_detail`) oldest first, ea
 `nodeRunId`, `nodeId`, `scopeId`, `iteration`, `sessionId`, `attempt`, `kind`, `message`,
 `sourceChain` (the `error_detail.source_chain`, outermost first; for session failures the
 agent's own reason is there, because `message` is generic), `recordedAt`, `startedAt`, and
-`finishedAt`. Attempt numbers count every soft-deleted row of the node and iteration in the run,
-whatever its status, while `failedAttempts` lists only the soft-deleted `Failed` rows that carry
-an `error_detail`. Both continue across resume and restart, and the retry budget restarts after
+`finishedAt`. Attempt numbers count every soft-deleted row of the node and iteration in the run (for
+a Loop body row, in its Loop round), whatever its status, while `failedAttempts` lists only the soft-deleted `Failed` rows that carry
+an `error_detail`. Both continue across resume and restart (a Loop body row's number restarts with each
+Loop round, including the rounds a Loop resume reruns), and the retry budget restarts after
 either (see `auto_retry` above). Listed numbers can therefore skip: a cancelled or abandoned
 attempt, a succeeded attempt that a composite resume cleared, or a failed row without a failure
 record takes a number but is not listed.
