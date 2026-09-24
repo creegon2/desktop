@@ -216,6 +216,7 @@ export const workflowRunTranslations = {
     "workflowRun.status.pending": "未运行",
     "workflowRun.status.running": "运行中",
     "workflowRun.status.awaiting_input": "等待参与",
+    "workflowRun.status.retry_waiting": "等待重试",
     "workflowRun.completeNode.action": "完成当前节点",
     "workflowRun.completeNode.disabledHint":
       "请等待节点回复完成后再完成当前节点。",
@@ -341,6 +342,24 @@ export const workflowRunTranslations = {
     "workflowRun.aiDiagnosis.title": "AI 推测（{{model}}）",
     "workflowRun.aiDiagnosis.disclaimer":
       "这是模型的推测，不参与任何自动判断。",
+    "workflowRun.retryWait.label":
+      "等待重试（第 {{attempt}}/{{max}} 次），{{seconds}} 秒后开始",
+    "workflowRun.retryWait.labelStarting":
+      "等待重试（第 {{attempt}}/{{max}} 次），即将开始",
+    "workflowRun.retryWait.attempt": "等待重试（第 {{attempt}}/{{max}} 次）",
+    "workflowRun.retryWait.countdown": "{{seconds}} 秒后开始",
+    "workflowRun.retryWait.starting": "即将开始",
+    "workflowRun.retryWait.sessionPending":
+      "上一次尝试失败，Ora 会自动重新运行这个节点；新一次尝试开始后，这里会显示它的会话。",
+    "workflowRun.failedAttempts.title": "之前失败的尝试",
+    "workflowRun.failedAttempts.replacedByRetry": "已自动重试",
+    "workflowRun.failedAttempts.replacedByResume": "已手动续跑",
+    "workflowRun.failedAttempts.beforeRestart": "从头重新运行前",
+    "workflowRun.failedAttempts.rootCause": "底层原因",
+    "workflowRun.failedAttempts.chain": "完整错误链（{{levels}} 层）",
+    "workflowRun.retry.exhausted_one": "已自动重试 {{count}} 次，仍然失败",
+    "workflowRun.retry.exhausted_other": "已自动重试 {{count}} 次，仍然失败",
+    "workflowRun.retry.abandoned": "运行在等待自动重试时结束，这次重试没有开始",
   },
   "en-US": {
     "errors.workflow_no_published_snapshot":
@@ -577,6 +596,7 @@ export const workflowRunTranslations = {
     "workflowRun.status.pending": "Pending",
     "workflowRun.status.running": "Running",
     "workflowRun.status.awaiting_input": "Awaiting input",
+    "workflowRun.status.retry_waiting": "Waiting to retry",
     "workflowRun.completeNode.action": "Complete current node",
     "workflowRun.completeNode.disabledHint":
       "Wait for the node to finish replying before completing it.",
@@ -718,5 +738,27 @@ export const workflowRunTranslations = {
     "workflowRun.aiDiagnosis.title": "AI guess ({{model}})",
     "workflowRun.aiDiagnosis.disclaimer":
       "This is a model's guess and drives no automatic decision.",
+    "workflowRun.retryWait.label":
+      "Waiting to retry (attempt {{attempt}}/{{max}}), starts in {{seconds}}s",
+    "workflowRun.retryWait.labelStarting":
+      "Waiting to retry (attempt {{attempt}}/{{max}}), starting…",
+    "workflowRun.retryWait.attempt":
+      "Waiting to retry (attempt {{attempt}}/{{max}})",
+    "workflowRun.retryWait.countdown": "starts in {{seconds}}s",
+    "workflowRun.retryWait.starting": "Starting…",
+    "workflowRun.retryWait.sessionPending":
+      "The last attempt failed and Ora will run this node again by itself; the new attempt's session appears here once it starts.",
+    "workflowRun.failedAttempts.title": "Earlier failed attempts",
+    "workflowRun.failedAttempts.replacedByRetry": "Retried automatically",
+    "workflowRun.failedAttempts.replacedByResume": "Resumed manually",
+    "workflowRun.failedAttempts.beforeRestart": "Before “Run again from start”",
+    "workflowRun.failedAttempts.rootCause": "Underlying error",
+    "workflowRun.failedAttempts.chain": "Full error chain ({{levels}} levels)",
+    "workflowRun.retry.exhausted_one":
+      "Retried automatically {{count}} time, still failed",
+    "workflowRun.retry.exhausted_other":
+      "Retried automatically {{count}} times, still failed",
+    "workflowRun.retry.abandoned":
+      "The run ended while this node was waiting to retry, so the retry never started",
   },
 } as const;
