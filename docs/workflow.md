@@ -264,7 +264,8 @@ can undo. Provenance lives on the node-run payload as `checkpoint`, `checkpoint_
 (restore only paths the failed nodes recorded), and `checkpoint` (restore the whole worktree
 to the resume unit's checkpoint). `node_files` is unavailable with
 `nodeFilesUnavailableReason` `"no_file_changes"` when a failed node has no checkpoint or
-recorded changes, and `"composite_region"` when the resume unit is an iteration composite.
+recorded changes, and `"composite_region"` when the resume unit is a composite (Iteration or
+Loop).
 `checkpoint` is unavailable with `"no_checkpoint"`, `"siblings_ran_after_checkpoint"` (a live
 node outside the resume unit was still active after the unit's earliest start: `finished_at`
 is none or later, or `started_at` is later; Start/Condition/Output rows that finished before
@@ -299,8 +300,11 @@ checkpoint. The boot sweep stays region-aware for interrupted region rows
 failed); whole-run `InterruptedByRestart` handling remains for non-region rows.
 
 Loop containers (`kind: "loop"`, see [Loop containers](#loop-containers)) resume the same way:
-the Loop node is the resume unit, and clearing it also closes its round scopes and soft-deletes
-every node run those rounds created, so the rerun starts from round 1 with no active round.
+the Loop node is the resume unit for any failed or cancelled Loop body row (including a retry
+wait the run abandoned) and for its own failed or cancelled row, and clearing it also closes its
+round scopes and soft-deletes every node run those rounds created, so the rerun starts from
+round 1 with no active round. A Loop is never resumed inside an open round. `node_files`
+rollback is unavailable for that unit (`composite_region`).
 Inside a round the Loop keeps its own failure semantics (siblings in the round are cancelled and
 the failure climbs to the Loop node); D2 sibling survival applies to the root scope.
 
@@ -328,7 +332,7 @@ default policy the waits are 10 s and 20 s, so a node runs at most three attempt
 
 When a covered failure arrives, one transaction records the failed attempt's full
 `payload.error_detail`, soft-deletes it exactly as a resume clears an attempt, and inserts the
-next attempt in the same run, scope, and iteration as a *waiting* row: status `Running`,
+next attempt in the same run, scope, and iteration as a _waiting_ row: status `Running`,
 `started_at` null, and `payload.retry_wait = {attempt, max_attempt, retry, max_retries,
 delay_ms, scheduled_at, due_at, previous_node_run_id}`. Because the row is `Running`, the run
 stays `Running`, independent branches keep going, successors keep waiting, and the run is not
@@ -358,9 +362,8 @@ A wait ends early in these cases:
 - **Run failure** (a root-scope node's final failure, a Loop's failure, an iteration under
   `fail`) settles every waiting row of the run as `Cancelled` with error
   `{"reason":"retry_abandoned"}`, so the retry never fires and resume reruns the node. A
-  composite row that D2 leaves running keeps its round open; resume reruns the abandoned Loop
-  body attempt inside that round and restarts an iteration from its first round (the region rule
-  above).
+  composite row that D2 leaves running keeps its round open; resume then restarts that Loop or
+  Iteration from its first round (the composite resume rules above).
 - **Restart**: the boot sweep treats a waiting row as a running one. An outer row fails with
   `interrupted_by_restart` and fails the run; a row inside a running iteration is absorbed and
   its round settles as failed. The retry does not continue.
@@ -374,7 +377,58 @@ retry in the same round: the round settles once it is drained, as for any in-fli
 `attempt / max_attempt`. `GetWorkflowRunResponse.failedAttempts` lists the earlier failed
 attempts (soft-deleted `Failed` rows with their `error_detail`) oldest first, each with
 `nodeRunId`, `nodeId`, `scopeId`, `iteration`, `sessionId`, `attempt`, `kind`, `message`,
-`recordedAt`, `startedAt`, and `finishedAt`.
+`sourceChain` (the `error_detail.source_chain`, outermost first; for session failures the
+agent's own reason is there, because `message` is generic), `recordedAt`, `startedAt`, and
+`finishedAt`.
+
+#### Retry in the app
+
+**Settings.** In the workflow editor, the agent node's settings end with a "Retry on failure"
+section after Structured output: a switch, "Max retries" (0–5) and "First wait (seconds)"
+(0–300). The two inputs keep their values but are disabled while the switch is off. A short list
+under the header names the retried failures, says that a retry after a reply problem tells the
+agent why the previous attempt failed, that each wait doubles up to 600 seconds, that file
+changes are not rolled back, and that interactive nodes never retry. While `retry` is absent the
+section shows the defaults and writes nothing; the first change writes the complete
+`{enabled, maxRetries, initialDelaySeconds}` object. An invalid number stays in its input with
+a message and is not written. The section is hidden while the node is interactive (a stored
+`retry` is kept). In a run, the node inspector shows the effective policy as a read-only
+"Retry on failure" row: "Default: up to 2 retries, first wait 10 s", "Up to 4 retries, first
+wait 30 s", "Off", "Not retried (max retries is 0)", or "Not retried (interactive node)".
+
+**Waiting state.** The run view shows a waiting row (live row `running`, `started_at` null,
+`payload.retry_wait` present) as its own status, "Waiting to retry", in orange, instead of
+running. It has no spinner, no pulsing frame, and no start time or duration, because nothing
+is executing and the row has no session yet. The stage card, the Overview node, and the node
+inspector header show "Waiting to retry (attempt {attempt}/{max_attempt}), starts in {n}s",
+where `n` is recomputed from `due_at - now` every second; at zero the label reads "…, starting…"
+until the next run refresh (the run detail is polled every 1.5 s) shows the started attempt.
+Path chips, iteration member chips, parallel chips, and Loop round rows use the same orange
+status and show only "starts in {n}s"; their accessible name includes the attempt count. The
+session panel of a waiting node explains that the new attempt's session appears once it starts.
+The stage keeps following a waiting node like a running one, and progress counts ("done /
+total", "x/y complete" for an iteration round) do not count it as done.
+
+**Attempt history.** Below the current attempt's error block, the node inspector lists
+"Earlier failed attempts" from `failedAttempts`, oldest first, for the node execution being
+viewed (the node and round of an outer or iteration row, including attempts from before a
+"Run again from start", or the Loop round of a Loop body row). Each entry shows "Attempt {n}",
+the translated failure kind, the message, the last `sourceChain` entry as "Underlying error"
+with the whole chain in an expandable list when it has more than one entry, the attempt's
+start and end time (or the time the failure was recorded when it never started), and its round
+for iteration and Loop rows. An entry is tagged "Retried automatically" or "Resumed manually"
+only when the run detail proves it: the live row's `auto_retry.retry` counts the automatic
+retries directly before it, and a fresh row whose attempt number directly follows a failed
+attempt replaced it by resume (a gap in the numbers means a cancelled or abandoned attempt the
+list does not include, so nothing older is tagged). Attempts from before a "Run again from
+start" are tagged "Before “Run again from start”" instead. The current attempt keeps its own display, including the injected
+previous-failure block. Failed attempts of Loop rounds that a Loop resume closed are not shown,
+because no live row of those rounds remains.
+
+**Exhausted retries and abandoned waits.** A failed node whose live row carries
+`auto_retry.retry = n > 0` shows "Retried automatically {n} time(s), still failed" next to the
+resume hint. A row cancelled with `{"reason":"retry_abandoned"}` shows "The run ended while this
+node was waiting to retry, so the retry never started" instead of the raw error.
 
 ### Entities and tables
 
