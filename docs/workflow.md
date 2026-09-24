@@ -304,6 +304,78 @@ every node run those rounds created, so the rerun starts from round 1 with no ac
 Inside a round the Loop keeps its own failure semantics (siblings in the round are cancelled and
 the failure climbs to the Loop node); D2 sibling survival applies to the root scope.
 
+### Automatic retry of failed agent attempts
+
+An agent node may retry a failed attempt by itself before the failure reaches the run. The policy
+is `agentConfig.retry = {enabled, maxRetries, initialDelaySeconds}` (camelCase in the graph):
+`maxRetries` is an integer from 0 to 5 and `initialDelaySeconds` an integer from 0 to 300. A
+missing (or `null`) `retry` means `{enabled: true, maxRetries: 2, initialDelaySeconds: 10}`; a
+present object must carry all three fields, and an incomplete or out-of-range one is rejected
+when the graph is parsed (`node <id> has an invalid retry config: …`). The field is optional
+with a default, so `schemaVersion` is unchanged and older graphs parse as before.
+`enabled: false` or `maxRetries: 0` turns retry off.
+
+Only agent nodes retry, including agents inside Iteration regions and Loop bodies (each retries
+on its own); Start, Condition, Output, and composite nodes never do, nor does an agent with
+`interactive: true`. Only these kinds retry: `session`, `session_ended_without_stop_reason`,
+`session_binding_rejected`, `structured_output`, `agent_refusal`, `unknown_stop_reason`. The
+other kinds (`missing_agent_ref`, `workflow_model_not_found`, `missing_agent_config`,
+`invalid_run_payload`, `prompt_template`, `missing_skill_materialization`, `baseline_persist`,
+`repository`, `interrupted_by_restart`, `multiple_outputs`, `condition_evaluation`) fail at once.
+
+Retry `n` (1-based) waits `initialDelaySeconds × 2^(n-1)` seconds, capped at 600: with the
+default policy the waits are 10 s and 20 s, so a node runs at most three attempts.
+
+When a covered failure arrives, one transaction records the failed attempt's full
+`payload.error_detail`, soft-deletes it exactly as a resume clears an attempt, and inserts the
+next attempt in the same run, scope, and iteration as a *waiting* row: status `Running`,
+`started_at` null, and `payload.retry_wait = {attempt, max_attempt, retry, max_retries,
+delay_ms, scheduled_at, due_at, previous_node_run_id}`. Because the row is `Running`, the run
+stays `Running`, independent branches keep going, successors keep waiting, and the run is not
+drained. When `due_at` passes, the backend timer (one tokio sleep per wait, no state of its own)
+wakes the engine under the run lock: the marker is removed, `started_at` is set, and the attempt
+is dispatched against the same scope it failed in (the outer graph and run pool, the iteration
+round's bindings, or the Loop body and that round's pool). Every wake re-reads the persisted
+marker, so a wake that arrives early re-arms, and a wake after cancel, run failure, a restart,
+or an earlier wake is a no-op; several waits simply own separate deadlines.
+
+The retried attempt gets the previous-failure prompt block under the run-level
+`inject_last_failure` switch when the failed kind is injectable (see above); session-class
+failures inject nothing. There is no rollback before a retry; the new attempt records its own
+pre-node checkpoint. `find_last_failed_attempt` ignores a failure that a later succeeded attempt
+of the same `(node_id, iteration)` already recovered from, so the next Loop round does not
+inherit a failure its predecessor retried away. The prompt stall resend inside one session is a
+separate mechanism and is unchanged.
+
+The retries a row has used ride on `payload.auto_retry = {retry, max_retries}`. Rows without it
+— a first attempt, a manually resumed attempt, an attempt after a restart — start a fresh
+budget, while `error_detail.attempt` keeps counting across all of them (a resume after three
+failed attempts runs attempts 4, 5, 6).
+
+A wait ends early in these cases:
+
+- **Cancel** settles every waiting row as `Cancelled` at once; nothing starts afterwards.
+- **Run failure** (a root-scope node's final failure, a Loop's failure, an iteration under
+  `fail`) settles every waiting row of the run as `Cancelled` with error
+  `{"reason":"retry_abandoned"}`, so the retry never fires and resume reruns the node. A
+  composite row that D2 leaves running keeps its round open; resume reruns the abandoned Loop
+  body attempt inside that round and restarts an iteration from its first round (the region rule
+  above).
+- **Restart**: the boot sweep treats a waiting row as a running one. An outer row fails with
+  `interrupted_by_restart` and fails the run; a row inside a running iteration is absorbed and
+  its round settles as failed. The retry does not continue.
+
+Inside an Iteration or Loop the retry stays in the same round; the composite's error strategy
+only sees the exhausted failure. A sibling region row's final failure does not abandon a waiting
+retry in the same round: the round settles once it is drained, as for any in-flight row.
+
+`get_workflow_run` exposes both states. A node is waiting when its live row is `running` and
+`payload.retry_wait` is present; the countdown is `due_at - now` and the label is
+`attempt / max_attempt`. `GetWorkflowRunResponse.failedAttempts` lists the earlier failed
+attempts (soft-deleted `Failed` rows with their `error_detail`) oldest first, each with
+`nodeRunId`, `nodeId`, `scopeId`, `iteration`, `sessionId`, `attempt`, `kind`, `message`,
+`recordedAt`, `startedAt`, and `finishedAt`.
+
 ### Entities and tables
 
 | Domain type              | Backing table               |

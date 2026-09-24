@@ -245,6 +245,66 @@ Loop 容器（`kind: "loop"`，见「Loop 容器」）按同样方式续跑：Lo
 活跃轮次。轮次内部沿用 Loop 自己的失败语义（同一轮的兄弟节点被取消，失败上抬到 Loop 节点）；
 D2 的「兄弟节点继续跑完」只适用于根作用域。
 
+### 智能体节点失败自动重试
+
+智能体节点可以在失败传到运行之前自行重试。策略写在 `agentConfig.retry = {enabled,
+maxRetries, initialDelaySeconds}`（图中用驼峰命名）：`maxRetries` 为 0 到 5 的整数，
+`initialDelaySeconds` 为 0 到 300 的整数。缺少 `retry`（或为 `null`）等于
+`{enabled: true, maxRetries: 2, initialDelaySeconds: 10}`；写了对象就必须三个字段齐全，缺字段
+或越界在解析图时直接拒绝（`node <id> has an invalid retry config: …`）。该字段可选且有默认值，
+所以 `schemaVersion` 不变，旧图照常解析。`enabled: false` 或 `maxRetries: 0` 表示不重试。
+
+只有智能体节点会重试，包括迭代区域和 Loop 循环体里的智能体（各自单独重试）；Start、
+Condition、Output 和复合节点从不重试，`interactive: true` 的智能体也不重试。只有以下 kind
+会重试：`session`、`session_ended_without_stop_reason`、`session_binding_rejected`、
+`structured_output`、`agent_refusal`、`unknown_stop_reason`。其余 kind（`missing_agent_ref`、
+`workflow_model_not_found`、`missing_agent_config`、`invalid_run_payload`、
+`prompt_template`、`missing_skill_materialization`、`baseline_persist`、`repository`、
+`interrupted_by_restart`、`multiple_outputs`、`condition_evaluation`）立即失败。
+
+第 `n` 次重试（从 1 数）前等待 `initialDelaySeconds × 2^(n-1)` 秒，上限 600 秒：默认策略下
+两次等待是 10 秒和 20 秒，一个节点最多跑三次。
+
+收到可重试的失败时，同一个事务里：记录失败尝试完整的 `payload.error_detail`，按续跑清除
+尝试的同一方式把它软删除，再在同一运行、作用域和 iteration 下插入下一次尝试，作为「等待中」
+的行：状态 `Running`、`started_at` 为空、`payload.retry_wait = {attempt, max_attempt,
+retry, max_retries, delay_ms, scheduled_at, due_at, previous_node_run_id}`。因为这一行是
+`Running`，运行保持 `Running`，互不依赖的分支继续执行，后继节点继续等待，运行不会被判定为
+已执行完。到了 `due_at`，后端计时器（每个等待一个 tokio sleep，自身不保存状态）在运行锁下
+唤醒引擎：删除等待标记、写入 `started_at`，并在失败时所在的作用域里派发这次尝试（外层图与
+运行变量池、迭代当轮的绑定，或 Loop 循环体与当轮的变量池）。每次唤醒都重新读取持久化的标记，
+所以提前到达的唤醒会重新定时；取消、运行失败、重启之后或已被唤醒过的唤醒都不做任何事；多个
+等待各自有自己的截止时间。
+
+重试的尝试在运行级开关 `inject_last_failure` 开启、且失败 kind 属于可注入 kind（见上文）时
+得到上一次失败的提示词块；会话类失败不注入。重试前不回滚文件；新尝试照常记录自己的节点前
+检查点。`find_last_failed_attempt` 会忽略同一 `(node_id, iteration)` 之后已有成功尝试的失败，
+所以 Loop 的下一轮不会继承上一轮已经靠重试解决的失败。单个会话内的提示词卡住重发是另一套机制，
+保持不变。
+
+一行已经用掉的重试次数记在 `payload.auto_retry = {retry, max_retries}`。没有该字段的行——
+第一次尝试、手动续跑的尝试、重启后的尝试——都从完整的次数重新开始，而
+`error_detail.attempt` 在它们之间持续累加（三次尝试都失败后续跑，接下来是第 4、5、6 次）。
+
+以下情况会提前结束等待：
+
+- **取消**：立即把所有等待中的行结算为 `Cancelled`，之后不会再启动。
+- **运行失败**（根作用域节点最终失败、Loop 失败、`fail` 策略的迭代失败）：把该运行所有等待中
+  的行结算为 `Cancelled`，错误为 `{"reason":"retry_abandoned"}`，重试不再触发，续跑会重跑该
+  节点。D2 下仍在运行的复合行保持当前轮次打开；续跑时，被放弃的 Loop 循环体尝试在该轮内重跑，
+  迭代则按上文区域规则从第一轮重来。
+- **重启**：开机清扫把等待中的行当作运行中的行处理。外层行记 `interrupted_by_restart` 并使运行
+  失败；运行中迭代里的行被吸收，该轮按失败结算。重试不会继续。
+
+在迭代或 Loop 内，重试留在同一轮；复合节点的错误策略只看到次数用尽后的失败。同一轮里另一个
+区域行最终失败时不放弃等待中的重试：和其他在执行中的行一样，该轮等全部行结束后再结算。
+
+`get_workflow_run` 同时给出这两种状态。节点的在用行为 `running` 且带有 `payload.retry_wait`
+时即为等待中；倒计时为 `due_at - now`，次数显示用 `attempt / max_attempt`。
+`GetWorkflowRunResponse.failedAttempts` 按时间从早到晚列出之前失败的尝试（软删除的 `Failed`
+行及其 `error_detail`），每项含 `nodeRunId`、`nodeId`、`scopeId`、`iteration`、`sessionId`、
+`attempt`、`kind`、`message`、`recordedAt`、`startedAt`、`finishedAt`。
+
 ### 实体与状态
 
 | 领域类型                 | 数据表                      |
