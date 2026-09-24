@@ -16,9 +16,11 @@ import {
 } from "../workflow-node-chrome";
 import { RunActAgentConfig } from "./run-act-agent-config";
 import { RunActArtifacts } from "./run-act-artifacts";
+import { RunActFailedAttempts } from "./run-act-failed-attempts";
 import { RunActFileChanges } from "./run-act-file-changes";
 import { RunBriefPopover } from "./run-brief-popover";
 import { RunLoopRoundHistory } from "./run-loop-round-history";
+import { RunRetryWaitLabel } from "./run-retry-wait-label";
 import { RunStatusBadge } from "./run-status-mark";
 import { shouldPreviewBrief } from "./should-preview-brief";
 import { useDiagnoseWorkflowNodeFailure } from "../../state/data/workflow-runs";
@@ -287,8 +289,10 @@ function RunActInspectorPanel({
   const Icon = metadata.icon;
   const summaryLabels = createWorkflowSummaryLabels(locale);
   const toolParameters = data.toolParameters ?? [];
+  // A waiting retry has not started; showing a time range would suggest it is already running.
   const timingRange =
-    state.startedAt !== undefined || state.finishedAt !== undefined
+    state.status !== "retry_waiting" &&
+    (state.startedAt !== undefined || state.finishedAt !== undefined)
       ? [
           state.startedAt !== undefined
             ? formatRunClock(state.startedAt, locale)
@@ -349,6 +353,7 @@ function RunActInspectorPanel({
                       round.status === "cancelled") &&
                       "bg-muted-foreground/40",
                     round.status === "awaiting_input" && "bg-amber-500",
+                    round.status === "retry_waiting" && "bg-orange-500",
                   )}
                 />
               </button>
@@ -386,6 +391,11 @@ function RunActInspectorPanel({
         <p className="mt-1 truncate text-[11px] text-muted-foreground">
           {data.description}
         </p>
+        {state.status === "retry_waiting" && state.retryWait !== undefined && (
+          <p className="mt-1 text-[11px] font-medium text-orange-700 dark:text-orange-300">
+            <RunRetryWaitLabel wait={state.retryWait} />
+          </p>
+        )}
         {state.snapshotId != null &&
           runSnapshotId != null &&
           state.snapshotId !== runSnapshotId && (
@@ -594,41 +604,57 @@ function RunActInspectorPanel({
               {timingRange}
             </p>
           )}
-          {state.errorMessage !== undefined && state.errorMessage !== "" && (
-            <div
-              role="alert"
-              className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-[11px] leading-5 text-destructive"
-            >
-              {state.errorDetail != null && (
-                <div className="mb-2 space-y-1">
-                  <p className="font-medium">
-                    {KNOWN_NODE_FAILURE_KINDS.has(state.errorDetail.kind)
-                      ? t(`workflowRun.errorKind.${state.errorDetail.kind}`)
-                      : state.errorDetail.kind}
-                  </p>
-                  {KNOWN_NODE_FAILURE_KINDS.has(state.errorDetail.kind) && (
-                    <p>
-                      {t(`workflowRun.errorHint.${state.errorDetail.kind}`)}
-                    </p>
-                  )}
-                  <p>
-                    {t("workflowRun.errorAttempt", {
-                      count: state.errorDetail.attempt,
-                    })}
-                  </p>
-                  {state.errorDetail.resumable === false &&
-                    state.errorDetail.injectsPreviousFailure === true && (
-                      <p>{t("workflowRun.errorInjectedResumeHint")}</p>
-                    )}
-                  {state.errorDetail.resumable === false &&
-                    state.errorDetail.injectsPreviousFailure === false && (
-                      <p>{t("workflowRun.errorNotResumableHint")}</p>
-                    )}
-                </div>
-              )}
-              <p>{state.errorMessage}</p>
-            </div>
+          {state.retryAbandoned === true && (
+            <p className="text-[11px] leading-5 text-muted-foreground">
+              {t("workflowRun.retry.abandoned")}
+            </p>
           )}
+          {state.retryAbandoned !== true &&
+            state.errorMessage !== undefined &&
+            state.errorMessage !== "" && (
+              <div
+                role="alert"
+                className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-[11px] leading-5 text-destructive"
+              >
+                {state.errorDetail != null && (
+                  <div className="mb-2 space-y-1">
+                    <p className="font-medium">
+                      {KNOWN_NODE_FAILURE_KINDS.has(state.errorDetail.kind)
+                        ? t(`workflowRun.errorKind.${state.errorDetail.kind}`)
+                        : state.errorDetail.kind}
+                    </p>
+                    {KNOWN_NODE_FAILURE_KINDS.has(state.errorDetail.kind) && (
+                      <p>
+                        {t(`workflowRun.errorHint.${state.errorDetail.kind}`)}
+                      </p>
+                    )}
+                    <p>
+                      {t("workflowRun.errorAttempt", {
+                        count: state.errorDetail.attempt,
+                      })}
+                    </p>
+                    {state.errorDetail.resumable === false &&
+                      state.errorDetail.injectsPreviousFailure === true && (
+                        <p>{t("workflowRun.errorInjectedResumeHint")}</p>
+                      )}
+                    {state.errorDetail.resumable === false &&
+                      state.errorDetail.injectsPreviousFailure === false && (
+                        <p>{t("workflowRun.errorNotResumableHint")}</p>
+                      )}
+                  </div>
+                )}
+                <p>{state.errorMessage}</p>
+              </div>
+            )}
+          {state.status === "failed" &&
+            state.autoRetry !== undefined &&
+            state.autoRetry.retry > 0 && (
+              <p className="text-[11px] font-medium text-orange-700 dark:text-orange-300">
+                {t("workflowRun.retry.exhausted", {
+                  count: state.autoRetry.retry,
+                })}
+              </p>
+            )}
           {(state.status === "failed" || state.status === "cancelled") &&
             (runStatus === "failed" || runStatus === "cancelled") && (
               <p className="text-[11px] text-muted-foreground">
@@ -690,6 +716,8 @@ function RunActInspectorPanel({
             </div>
           ) : null}
         </InspectorSection>
+
+        <RunActFailedAttempts attempts={state.failedAttempts} />
 
         {data.kind === "loop" && (
           <InspectorSection title={t("workflowRun.loopRounds.title")}>

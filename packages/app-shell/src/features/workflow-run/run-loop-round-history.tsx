@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@ora/ui";
 import type { GraphWorkflowRound } from "@ora/workflow-runtime";
+import { RunRetryWaitLabel } from "./run-retry-wait-label";
 import { RunStatusBadge } from "./run-status-mark";
 
 /** Lets a Loop inspector select one persisted round without merging repeated child states. */
@@ -76,6 +77,14 @@ export function RunLoopRoundHistory({
                 {state.sessionId}
               </span>
             )}
+            {state.status === "retry_waiting" &&
+              state.retryWait !== undefined && (
+                <RunRetryWaitLabel
+                  wait={state.retryWait}
+                  variant="compact"
+                  className="shrink-0 text-[9px] tabular-nums text-orange-700 dark:text-orange-300"
+                />
+              )}
             <RunStatusBadge status={state.status} quiet className="shrink-0" />
           </div>
         ))}
