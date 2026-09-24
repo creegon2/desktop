@@ -10,7 +10,9 @@ use ora_application::{
     NodeAutoRetry, NodeFailureKind, ResumeWorkflowRunResult, WorkflowRunEngineRepository,
     WorkflowRunPayload,
 };
-use ora_domain::{WorkflowNodeRunId, WorkflowNodeStatus, WorkflowRunStatus, WorkflowScopeStatus};
+use ora_domain::{
+    WorkflowNodeRun, WorkflowNodeRunId, WorkflowNodeStatus, WorkflowRunStatus, WorkflowScopeStatus,
+};
 use pretty_assertions::assert_eq;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -417,6 +419,68 @@ fn a_retry_inside_a_loop_round_stays_in_that_round_and_later_rounds_inherit_noth
     h.complete(&round_two.id, "done", 13_000);
     assert_eq!(h.run().status, WorkflowRunStatus::Succeeded);
     assert_eq!(h.rows_of("loop")[0].status, WorkflowNodeStatus::Succeeded);
+}
+
+/// Loop rounds number attempts across rounds (Loop body rows carry no iteration, so attempt
+/// numbering counts every earlier attempt of the node in the run), but the retry budget belongs
+/// to the round: a writer that used one of its two retries in round 1 still gets both retries in
+/// round 2, and only a third failure in one round would exhaust it.
+#[test]
+fn a_loop_member_gets_its_full_retry_budget_in_every_round() {
+    let h = Harness::start(&loop_graph(retry(true, 2, 1), /*sibling*/ None));
+    let wait_tuple = |row: &WorkflowNodeRun| {
+        let wait = Harness::wait_of(row).unwrap();
+        (
+            wait.attempt,
+            wait.max_attempt,
+            wait.retry,
+            wait.max_retries,
+            wait.delay_ms,
+        )
+    };
+
+    let round_one = h.running("writer");
+    h.fail(&round_one.id, NodeFailureKind::Session, 1_000);
+    let round_one_retry = h.running("writer");
+    assert_eq!(wait_tuple(&round_one_retry), (2, 3, 1, 2, 1_000));
+    h.wake(&round_one_retry.id, 2_000);
+    h.complete(&round_one_retry.id, "again", 3_000);
+
+    let round_two = h.running("writer");
+    assert_ne!(round_two.scope_id, round_one.scope_id);
+    assert_eq!(
+        NodeAutoRetry::from_payload(round_two.payload.as_deref()),
+        None
+    );
+    h.fail(&round_two.id, NodeFailureKind::Session, 4_000);
+    let first_retry = h.running("writer");
+    // Attempt 3 of the run, but retry 1 of a fresh budget of 2 after the shorter first wait.
+    assert_eq!(wait_tuple(&first_retry), (3, 4, 1, 2, 1_000));
+    h.wake(&first_retry.id, 5_000);
+    h.fail(&first_retry.id, NodeFailureKind::Session, 6_000);
+    let second_retry = h.running("writer");
+    assert_eq!(wait_tuple(&second_retry), (4, 4, 2, 2, 2_000));
+    assert_eq!(h.run().status, WorkflowRunStatus::Running);
+    h.wake(&second_retry.id, 8_000);
+    h.complete(&second_retry.id, "done", 9_000);
+
+    assert_eq!(h.rows_of("loop")[0].status, WorkflowNodeStatus::Succeeded);
+    assert_eq!(h.run().status, WorkflowRunStatus::Succeeded);
+    assert_eq!(
+        h.detail()
+            .failed_attempts
+            .iter()
+            .map(|row| (
+                row.scope_id.clone(),
+                Harness::error_detail(row)["attempt"].clone()
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (round_one.scope_id.clone(), json!(1)),
+            (round_two.scope_id.clone(), json!(2)),
+            (round_two.scope_id.clone(), json!(3)),
+        ]
+    );
 }
 
 /// Test 12: an exhausted Loop body agent keeps Loop semantics — the Loop and the run fail — and
