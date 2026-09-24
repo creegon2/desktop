@@ -258,9 +258,12 @@ describe("RunActInspector waiting retry", () => {
 });
 
 describe("RunActInspector exhausted automatic retries", () => {
+  // The failed row ran: it has a start time, so the retry that scheduled it counts.
   const failedAfterRetries = (retry: number): GraphWorkflowNodeState => ({
     status: "failed",
     errorMessage: "agent session ended with an error",
+    startedAt: "2026-09-24T06:00:00.000Z",
+    finishedAt: "2026-09-24T06:00:30.000Z",
     autoRetry: { retry, maxRetries: 3 },
   });
 
@@ -301,6 +304,110 @@ describe("RunActInspector exhausted automatic retries", () => {
     await settled();
     expect(screen.queryByText(/已自动重试/u)).not.toBeInTheDocument();
     expect(screen.getByText(RESUME_HINT)).toBeInTheDocument();
+  });
+});
+
+describe("RunActInspector retries that never started", () => {
+  const NOT_STARTED = "这次自动重试已安排，但没有开始";
+
+  it("does not count a retry whose wait an app restart ended as a retry that ran", async () => {
+    renderInspector(
+      {
+        status: "failed",
+        errorMessage: '{"reason":"interrupted_by_restart"}',
+        errorDetail: {
+          kind: "interrupted_by_restart",
+          message: '{"reason":"interrupted_by_restart"}',
+          sourceChain: [],
+          attempt: 2,
+          resumable: true,
+          injectsPreviousFailure: false,
+          recordedAt: 50,
+        },
+        finishedAt: "2026-09-24T06:01:00.000Z",
+        autoRetry: { retry: 1, maxRetries: 3 },
+      },
+      { runStatus: "failed" },
+    );
+    await settled();
+
+    expect(screen.queryByText(/已自动重试/u)).not.toBeInTheDocument();
+    expect(screen.getByText(NOT_STARTED)).toBeInTheDocument();
+    expect(screen.getByText(RESUME_HINT)).toBeInTheDocument();
+  });
+
+  it("counts only the retries that started when the last one never did", async () => {
+    renderInspector(
+      {
+        status: "failed",
+        errorMessage: '{"reason":"interrupted_by_restart"}',
+        finishedAt: "2026-09-24T06:01:00.000Z",
+        autoRetry: { retry: 2, maxRetries: 3 },
+      },
+      { runStatus: "failed" },
+    );
+    await settled();
+
+    expect(screen.getByText("已自动重试 1 次，仍然失败")).toBeInTheDocument();
+    expect(screen.getByText(NOT_STARTED)).toBeInTheDocument();
+  });
+
+  it("says a retry cancelled while waiting never started", async () => {
+    renderInspector(
+      {
+        status: "cancelled",
+        finishedAt: "2026-09-24T06:01:00.000Z",
+        autoRetry: { retry: 1, maxRetries: 3 },
+      },
+      { runStatus: "cancelled" },
+    );
+    await settled();
+
+    expect(screen.getByText(NOT_STARTED)).toBeInTheDocument();
+    expect(screen.queryByText(/已自动重试/u)).not.toBeInTheDocument();
+  });
+
+  it("uses only the abandoned note for a wait the run abandoned", async () => {
+    renderInspector(
+      {
+        status: "cancelled",
+        errorMessage: '{"reason":"retry_abandoned"}',
+        retryAbandoned: true,
+        finishedAt: "2026-09-24T06:01:00.000Z",
+        autoRetry: { retry: 1, maxRetries: 3 },
+      },
+      { runStatus: "failed" },
+    );
+    await settled();
+
+    expect(
+      screen.getByText("运行在等待自动重试时结束，这次重试没有开始"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(NOT_STARTED)).not.toBeInTheDocument();
+    expect(screen.queryByText(/已自动重试/u)).not.toBeInTheDocument();
+  });
+
+  it("shows neither note while the retry is still waiting", async () => {
+    renderInspector(
+      {
+        status: "retry_waiting",
+        autoRetry: { retry: 1, maxRetries: 3 },
+        retryWait: {
+          attempt: 2,
+          maxAttempt: 4,
+          retry: 1,
+          maxRetries: 3,
+          delayMs: 10_000,
+          scheduledAt: Date.now(),
+          dueAt: Date.now() + 600_000,
+        },
+      },
+      { runStatus: "running" },
+    );
+    await settled();
+
+    expect(screen.queryByText(NOT_STARTED)).not.toBeInTheDocument();
+    expect(screen.queryByText(/仍然失败/u)).not.toBeInTheDocument();
   });
 });
 
@@ -363,6 +470,8 @@ describe("RunActInspector earlier failed attempts", () => {
     },
     injectedFailureContext:
       "## 上一次尝试（第 2 次）失败信息\n类型：结构化输出不合格",
+    startedAt: "2026-09-24T06:00:00.000Z",
+    finishedAt: "2026-09-24T06:00:30.000Z",
     autoRetry: { retry: 2, maxRetries: 2 },
   };
 

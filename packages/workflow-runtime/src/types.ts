@@ -389,9 +389,13 @@ export interface WorkflowNodeAutoRetry {
   maxRetries: number;
 }
 
-/** What replaced an earlier failed attempt, when the run detail allows telling it. */
+/**
+ * What replaced an earlier failed attempt, when the run detail allows telling it.
+ * `automatic_retry_scheduled`: an automatic retry was scheduled but never started (it is still
+ * waiting, or the wait was cancelled, abandoned, or ended by an app restart).
+ */
 export type WorkflowNodeAttemptReplacement =
-  "automatic_retry" | "manual_resume";
+  "automatic_retry" | "automatic_retry_scheduled" | "manual_resume";
 
 /** One earlier failed attempt of a node execution (same node, scope, and round). */
 export interface WorkflowNodeAttemptFailure {
@@ -438,7 +442,10 @@ export interface GraphWorkflowNodeState {
   aiDiagnosis?: WorkflowNodeAiDiagnosis;
   /** Present only while the status is `retry_waiting`. */
   retryWait?: WorkflowNodeRetryWait;
-  /** Present when an automatic retry started this attempt (kept after it fails). */
+  /**
+   * Present when an automatic retry scheduled this attempt (kept after it fails). The attempt
+   * itself only ran when `startedAt` is set; a wait that ended early leaves it unset.
+   */
   autoRetry?: WorkflowNodeAutoRetry;
   /** A waiting retry the run gave up on when it ended (`{"reason":"retry_abandoned"}`). */
   retryAbandoned?: boolean;

@@ -58,7 +58,10 @@ function projectedAttempt(
   };
 }
 
-/** A live row in the root scope that did not start from a retry and records no attempt number. */
+/**
+ * A started live row in the root scope that did not start from a retry and records no attempt
+ * number.
+ */
 function owner(
   overrides: Partial<AttemptHistoryOwner> = {},
 ): AttemptHistoryOwner {
@@ -66,6 +69,7 @@ function owner(
     scopeId: ROOT_SCOPE,
     autoRetry: undefined,
     attempt: undefined,
+    started: true,
     ...overrides,
   };
 }
@@ -304,20 +308,41 @@ describe("projectFailedAttempts", () => {
     expect(projectFailedAttempts([], owner(), undefined)).toStrictEqual([]);
   });
 
-  it("marks both attempts before a wait started by retry 2 as automatic retries", () => {
+  it("marks the attempt before a waiting retry 2 as scheduled and the one before as retried", () => {
+    // Attempt 2 was itself retry 1 and ran; retry 2 is still waiting, so it has not run.
     expect(
       projectFailedAttempts(
         [failedAttempt(1), failedAttempt(2)],
-        owner({ attempt: 3, autoRetry: { retry: 2, maxRetries: 3 } }),
+        owner({
+          attempt: 3,
+          autoRetry: { retry: 2, maxRetries: 3 },
+          started: false,
+        }),
         undefined,
       ),
     ).toStrictEqual([
       projectedAttempt(1, { replacedBy: "automatic_retry" }),
-      projectedAttempt(2, { replacedBy: "automatic_retry" }),
+      projectedAttempt(2, { replacedBy: "automatic_retry_scheduled" }),
     ]);
   });
 
-  it("marks the attempt before a wait started by retry 1 as an automatic retry", () => {
+  it("marks the attempt before a waiting retry 1 as a scheduled retry, not a retry that ran", () => {
+    expect(
+      projectFailedAttempts(
+        [failedAttempt(1)],
+        owner({
+          attempt: 2,
+          autoRetry: { retry: 1, maxRetries: 3 },
+          started: false,
+        }),
+        undefined,
+      ),
+    ).toStrictEqual([
+      projectedAttempt(1, { replacedBy: "automatic_retry_scheduled" }),
+    ]);
+  });
+
+  it("marks the attempt before a started retry 1 as an automatic retry", () => {
     expect(
       projectFailedAttempts(
         [failedAttempt(1)],
@@ -325,6 +350,27 @@ describe("projectFailedAttempts", () => {
         undefined,
       ),
     ).toStrictEqual([projectedAttempt(1, { replacedBy: "automatic_retry" })]);
+  });
+
+  it("uses the listed attempt's own start to tell whether an older retry ran", () => {
+    // Each mark reads the start of the row that replaced the attempt: attempt 3 started, so
+    // retry 2 ran; attempt 2 has no start time, so retry 1 never ran.
+    expect(
+      projectFailedAttempts(
+        [failedAttempt(1), failedAttempt(2, { startedAt: null })],
+        owner({ attempt: 3, autoRetry: { retry: 2, maxRetries: 3 } }),
+        undefined,
+      ),
+    ).toStrictEqual([
+      projectedAttempt(1, { replacedBy: "automatic_retry_scheduled" }),
+      (() => {
+        const projected = projectedAttempt(2, {
+          replacedBy: "automatic_retry",
+        });
+        delete projected.startedAt;
+        return projected;
+      })(),
+    ]);
   });
 
   it("marks only the directly preceding attempt of a fresh failed row as a manual resume", () => {

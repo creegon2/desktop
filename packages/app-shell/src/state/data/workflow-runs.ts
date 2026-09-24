@@ -697,6 +697,7 @@ function projectPersistedNodeState(
       autoRetry,
       attempt:
         retryWait?.attempt ?? recordedAttemptNumber(payload?.error_detail),
+      started: nodeRun.startedAt != null,
     },
     history.loopRoundIndex,
   );

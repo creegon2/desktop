@@ -271,6 +271,13 @@ node outside the resume unit was still active after the unit's earliest start: `
 is none or later, or `started_at` is later; Start/Condition/Output rows that finished before
 that instant do not count), or `"not_resumable"`.
 
+A node that automatic retries replaced is rolled back as one unit with every attempt of its
+retry chain (`payload.retry_chain` on the waiting row: the earlier attempts of the same node and
+round since the last start, restart, or resume, oldest first). `checkpoint` restores the
+worktree from before the chain's first attempt, and `node_files` covers the files any attempt
+changed and is offered only when every attempt that ran took a checkpoint. A chain of one
+attempt behaves as before.
+
 The run-level switch `inject_last_failure` (default on) injects the previous attempt of the
 same `(node_id, iteration)` into the prompt when that attempt's kind is one of the four
 injectable kinds. The rendered block is stored as `payload.injected_failure_context`.
@@ -347,8 +354,10 @@ The retried attempt gets the previous-failure prompt block under the run-level
 `inject_last_failure` switch when the failed kind is injectable (see above); session-class
 failures inject nothing. There is no rollback before a retry; the new attempt records its own
 pre-node checkpoint. `find_last_failed_attempt` ignores a failure that a later succeeded attempt
-of the same `(node_id, iteration)` already recovered from, so the next Loop round does not
-inherit a failure its predecessor retried away. The prompt stall resend inside one session is a
+of the same `(node_id, iteration)` already recovered from, even after a resume or restart
+cleared that attempt, so the next Loop round (or a Loop restarted from round 1) does not inherit
+a failure that was already retried away. It also ignores rows that never started (a waiting row
+that a restart failed), so the attempt that really failed is the one injected. The prompt stall resend inside one session is a
 separate mechanism and is unchanged.
 
 The retries a row has used ride on `payload.auto_retry = {retry, max_retries}`. Rows without it
@@ -379,7 +388,12 @@ attempts (soft-deleted `Failed` rows with their `error_detail`) oldest first, ea
 `nodeRunId`, `nodeId`, `scopeId`, `iteration`, `sessionId`, `attempt`, `kind`, `message`,
 `sourceChain` (the `error_detail.source_chain`, outermost first; for session failures the
 agent's own reason is there, because `message` is generic), `recordedAt`, `startedAt`, and
-`finishedAt`.
+`finishedAt`. Attempt numbers count every soft-deleted row of the node and iteration in the run,
+whatever its status, while `failedAttempts` lists only the soft-deleted `Failed` rows that carry
+an `error_detail`. Both continue across resume and restart, and the retry budget restarts after
+either (see `auto_retry` above). Listed numbers can therefore skip: a cancelled or abandoned
+attempt, a succeeded attempt that a composite resume cleared, or a failed row without a failure
+record takes a number but is not listed.
 
 #### Retry in the app
 
@@ -404,10 +418,13 @@ inspector header show "Waiting to retry (attempt {attempt}/{max_attempt}), start
 where `n` is recomputed from `due_at - now` every second; at zero the label reads "…, starting…"
 until the next run refresh (the run detail is polled every 1.5 s) shows the started attempt.
 Path chips, iteration member chips, parallel chips, and Loop round rows use the same orange
-status and show only "starts in {n}s"; their accessible name includes the attempt count. The
-session panel of a waiting node explains that the new attempt's session appears once it starts.
-The stage keeps following a waiting node like a running one, and progress counts ("done /
-total", "x/y complete" for an iteration round) do not count it as done.
+status and show only "starts in {n}s"; the chips' accessible names and a screen-reader-only text
+in the Loop round row add "Waiting to retry (attempt {attempt}/{max_attempt})" without the
+seconds. The session panel of a waiting node explains that the new attempt's session appears
+once it starts. When no node is pinned, the stage can follow a waiting node like a running one,
+but an awaiting-input or running peer takes precedence: among active nodes the stage prefers the
+most recently started one, and a waiting node has no start time. Progress counts ("done /
+total", "x/y complete" for an iteration round) do not count a waiting node as done.
 
 **Attempt history.** Below the current attempt's error block, the node inspector lists
 "Earlier failed attempts" from `failedAttempts`, oldest first, for the node execution being
@@ -416,19 +433,28 @@ viewed (the node and round of an outer or iteration row, including attempts from
 the translated failure kind, the message, the last `sourceChain` entry as "Underlying error"
 with the whole chain in an expandable list when it has more than one entry, the attempt's
 start and end time (or the time the failure was recorded when it never started), and its round
-for iteration and Loop rows. An entry is tagged "Retried automatically" or "Resumed manually"
-only when the run detail proves it: the live row's `auto_retry.retry` counts the automatic
-retries directly before it, and a fresh row whose attempt number directly follows a failed
-attempt replaced it by resume (a gap in the numbers means a cancelled or abandoned attempt the
-list does not include, so nothing older is tagged). Attempts from before a "Run again from
-start" are tagged "Before “Run again from start”" instead. The current attempt keeps its own display, including the injected
+for iteration and Loop rows. An entry is tagged only when the run detail proves what replaced
+it: the live row's `auto_retry.retry` counts the automatic retries directly before it, and a
+fresh row whose attempt number directly follows a failed attempt replaced it by resume
+("Resumed manually"). An attempt replaced by an automatic retry reads "Retried automatically"
+when the row that retry created started, and "Automatic retry scheduled (not started)" when
+that row never started (it is still waiting, or its wait was cancelled, abandoned, or ended by
+an app restart). A gap in the numbers stops the tagging, so nothing older is tagged; the missing
+number belongs to a row the list does not include (a cancelled or abandoned attempt, a
+succeeded attempt that a composite resume cleared, or a failed row without a failure record).
+Attempts from before a "Run again from start" are tagged "Before “Run again from start”"
+instead. The current attempt keeps its own display, including the injected
 previous-failure block. Failed attempts of Loop rounds that a Loop resume closed are not shown,
 because no live row of those rounds remains.
 
-**Exhausted retries and abandoned waits.** A failed node whose live row carries
-`auto_retry.retry = n > 0` shows "Retried automatically {n} time(s), still failed" next to the
-resume hint. A row cancelled with `{"reason":"retry_abandoned"}` shows "The run ended while this
-node was waiting to retry, so the retry never started" instead of the raw error.
+**Exhausted retries and retries that never started.** A failed node whose live row carries
+`auto_retry.retry = n` shows "Retried automatically {k} time(s), still failed" next to the
+resume hint, where `k` counts only the retries that started: `n` when the row started and
+`n - 1` when it never did (a waiting row that an app restart failed); nothing is shown when `k`
+is 0. A failed or cancelled row that carries `auto_retry` but never started shows "This
+automatic retry was scheduled but never started". A row cancelled with
+`{"reason":"retry_abandoned"}` shows "The run ended while this node was waiting to retry, so the
+retry never started" instead of the raw error and no second note.
 
 ### Entities and tables
 

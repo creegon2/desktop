@@ -11,6 +11,8 @@ const KNOWN_NODE_FAILURE_KINDS = new Set<string>(NODE_FAILURE_KINDS);
 
 const REPLACEMENT_LABEL_KEYS: Record<WorkflowNodeAttemptReplacement, string> = {
   automatic_retry: "workflowRun.failedAttempts.replacedByRetry",
+  automatic_retry_scheduled:
+    "workflowRun.failedAttempts.replacedByScheduledRetry",
   manual_resume: "workflowRun.failedAttempts.replacedByResume",
 };
 
@@ -133,7 +135,7 @@ function FailedAttemptEntry({
   );
 }
 
-/** Automatic retries share the waiting state's orange; manual and restart notes stay neutral. */
+/** Automatic retries that ran share the waiting state's orange; the other chips stay neutral. */
 function AttemptChip({
   automatic,
   children,

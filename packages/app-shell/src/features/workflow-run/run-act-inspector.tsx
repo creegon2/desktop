@@ -302,6 +302,16 @@ function RunActInspectorPanel({
             : "—",
         ].join(" — ")
       : null;
+  // `auto_retry` marks the retry that scheduled this row; that retry only ran if the row started.
+  // A wait that ended early (cancel, run failure, app restart) must not count as a retry.
+  const retryNeverStarted =
+    state.autoRetry !== undefined &&
+    state.startedAt === undefined &&
+    state.status !== "retry_waiting";
+  const startedAutoRetries =
+    state.autoRetry === undefined
+      ? 0
+      : state.autoRetry.retry - (state.startedAt === undefined ? 1 : 0);
   const agentConfig = data.agentConfig;
   const canEdit = editable && onPatchNode !== undefined;
   const promptLabel = nodeType.configFields.includes("initialPrompt")
@@ -646,15 +656,18 @@ function RunActInspectorPanel({
                 <p>{state.errorMessage}</p>
               </div>
             )}
-          {state.status === "failed" &&
-            state.autoRetry !== undefined &&
-            state.autoRetry.retry > 0 && (
-              <p className="text-[11px] font-medium text-orange-700 dark:text-orange-300">
-                {t("workflowRun.retry.exhausted", {
-                  count: state.autoRetry.retry,
-                })}
-              </p>
-            )}
+          {state.status === "failed" && startedAutoRetries > 0 && (
+            <p className="text-[11px] font-medium text-orange-700 dark:text-orange-300">
+              {t("workflowRun.retry.exhausted", {
+                count: startedAutoRetries,
+              })}
+            </p>
+          )}
+          {retryNeverStarted && state.retryAbandoned !== true && (
+            <p className="text-[11px] leading-5 text-muted-foreground">
+              {t("workflowRun.retry.notStarted")}
+            </p>
+          )}
           {(state.status === "failed" || state.status === "cancelled") &&
             (runStatus === "failed" || runStatus === "cancelled") && (
               <p className="text-[11px] text-muted-foreground">

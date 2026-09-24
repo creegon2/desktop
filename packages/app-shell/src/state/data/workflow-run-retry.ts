@@ -31,6 +31,11 @@ export type AttemptHistoryOwner = {
   autoRetry: WorkflowNodeAutoRetry | undefined;
   /** The live row's attempt number when the payload records it (waiting or failed rows). */
   attempt: number | undefined;
+  /**
+   * Whether the live row ever started. A row scheduled by an automatic retry that is still
+   * waiting, or whose wait was cancelled, abandoned, or failed by an app restart, never did.
+   */
+  started: boolean;
 };
 
 /** Error the backend writes on a waiting retry that the run gave up on when it ended. */
@@ -160,9 +165,11 @@ export function groupFailedAttempts(
  * listed. Attempt numbers count every soft-deleted row, so a gap in the numbers reveals such a
  * hidden row.
  *
- * - A row started by automatic retry `k` (`auto_retry.retry`) was inserted in the transaction that
- *   soft-deleted the attempt before it, so that attempt was replaced by an automatic retry, and it
- *   was itself started by retry `k - 1` (0 = a fresh start).
+ * - A row scheduled by automatic retry `k` (`auto_retry.retry`) was inserted in the transaction
+ *   that soft-deleted the attempt before it, so that attempt was replaced by an automatic retry, and
+ *   it was itself scheduled by retry `k - 1` (0 = a fresh start). The retry only ran if the row
+ *   that carries it started; otherwise the attempt is marked as having a retry scheduled that
+ *   never started, so the view never claims a retry that did not run.
  * - A fresh row whose attempt number directly follows a failed attempt in the same scope replaced
  *   it through a manual resume: automatic retries always mark their row, and a restart opens a
  *   new root scope.
@@ -177,17 +184,29 @@ function markReplacements(
     PersistedFailedAttempt,
     WorkflowNodeAttemptReplacement
   >();
-  let next: { attempt: number | undefined; retry: number } | null = {
+  let next: {
+    attempt: number | undefined;
+    retry: number;
+    started: boolean;
+  } | null = {
     attempt: owner.attempt,
     retry: owner.autoRetry?.retry ?? 0,
+    started: owner.started,
   };
   for (let index = current.length - 1; index >= 0 && next !== null; index--) {
     const attempt = current[index]!;
     const adjacent =
       next.attempt === undefined ? null : next.attempt === attempt.attempt + 1;
     if (next.retry >= 1 && adjacent !== false) {
-      marks.set(attempt, "automatic_retry");
-      next = { attempt: attempt.attempt, retry: next.retry - 1 };
+      marks.set(
+        attempt,
+        next.started ? "automatic_retry" : "automatic_retry_scheduled",
+      );
+      next = {
+        attempt: attempt.attempt,
+        retry: next.retry - 1,
+        started: attempt.startedAt != null,
+      };
     } else if (next.retry === 0 && adjacent === true) {
       marks.set(attempt, "manual_resume");
       next = null;

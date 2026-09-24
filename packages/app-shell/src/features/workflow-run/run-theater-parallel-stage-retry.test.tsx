@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createChatStore } from "@ora/chat";
 import type {
@@ -101,16 +101,19 @@ beforeEach(async () => {
   vi.setSystemTime(NOW);
 });
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   vi.useRealTimers();
+  await appI18n.changeLanguage("zh-CN");
 });
 
 describe("RunTheaterParallelStage with a waiting retry act", () => {
   it("tints only the waiting act's chip and keeps its card off the live cue", () => {
     render(stage("tests"), { wrapper: createWrapper() });
 
-    const waitingChip = screen.getByRole("button", { name: "聚焦到 代码评审" });
+    const waitingChip = screen.getByRole("button", {
+      name: "聚焦到 代码评审: 等待重试（第 3/4 次）",
+    });
     expect(waitingChip).toHaveAttribute("data-retry-waiting", "");
     expect(waitingChip).toHaveAttribute("aria-pressed", "false");
     expect(waitingChip).toHaveClass(
@@ -119,8 +122,14 @@ describe("RunTheaterParallelStage with a waiting retry act", () => {
       "text-orange-950",
     );
 
+    expect(within(waitingChip).getByText("45 秒后开始")).toHaveAttribute(
+      "data-retry-wait",
+      "compact",
+    );
+
     const runningChip = screen.getByRole("button", { name: "聚焦到 运行测试" });
     expect(runningChip).not.toHaveAttribute("data-retry-waiting");
+    expect(runningChip.querySelector("[data-retry-wait]")).toBeNull();
     expect(runningChip).toHaveAttribute("aria-pressed", "true");
     expect(runningChip).toHaveClass("border-foreground/35");
     expect(runningChip.className).not.toContain("orange");
@@ -146,7 +155,9 @@ describe("RunTheaterParallelStage with a waiting retry act", () => {
   it("uses the stronger orange chip when the waiting act is focused and still shows no live cue", () => {
     render(stage("review"), { wrapper: createWrapper() });
 
-    const waitingChip = screen.getByRole("button", { name: "聚焦到 代码评审" });
+    const waitingChip = screen.getByRole("button", {
+      name: "聚焦到 代码评审: 等待重试（第 3/4 次）",
+    });
     expect(waitingChip).toHaveAttribute("aria-pressed", "true");
     expect(waitingChip).toHaveAttribute("data-retry-waiting", "");
     expect(waitingChip).toHaveClass("border-orange-500/55", "bg-orange-500/15");
@@ -163,5 +174,34 @@ describe("RunTheaterParallelStage with a waiting retry act", () => {
     ).toBeInTheDocument();
     expect(waitingCard.querySelector(".tabler-icon-loader-2")).toBeNull();
     expect(document.querySelector(".theater-live-breathe")).toBeNull();
+  });
+
+  it("counts the chip down each second while its accessible name stays the same", async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    render(stage("tests"), { wrapper: createWrapper() });
+    const name = "聚焦到 代码评审: 等待重试（第 3/4 次）";
+    expect(
+      within(screen.getByRole("button", { name })).getByText("45 秒后开始"),
+    ).toBeInTheDocument();
+
+    for (let second = 0; second < 3; second += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+    }
+    expect(
+      within(screen.getByRole("button", { name })).getByText("42 秒后开始"),
+    ).toBeInTheDocument();
+  });
+
+  it("names the attempt in English", async () => {
+    await appI18n.changeLanguage("en-US");
+    render(stage("tests"), { wrapper: createWrapper() });
+    const chip = screen.getByRole("button", {
+      name: "Focus 代码评审: Waiting to retry (attempt 3/4)",
+    });
+    expect(within(chip).getByText("starts in 45s")).toBeInTheDocument();
   });
 });
