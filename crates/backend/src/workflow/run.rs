@@ -24,6 +24,10 @@ mod resume_tests;
 #[cfg(test)]
 mod retry_composite_tests;
 #[cfg(test)]
+mod retry_edge_tests;
+#[cfg(test)]
+mod retry_history_tests;
+#[cfg(test)]
 mod retry_review_tests;
 #[cfg(test)]
 mod retry_rollback_tests;

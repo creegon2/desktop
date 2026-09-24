@@ -63,7 +63,7 @@ fn iteration_run(graph: &str) -> Harness {
 
 /// A Loop (at most three rounds, until `writer` answers `done`) whose body is `entry → writer`,
 /// optionally next to an outer agent `a`.
-fn loop_graph(writer: Value, sibling: Option<Value>) -> String {
+pub(super) fn loop_graph(writer: Value, sibling: Option<Value>) -> String {
     let mut writer = agent("writer", writer);
     writer["parentId"] = json!("loop");
     writer["data"]["containerId"] = json!("loop");

@@ -395,6 +395,86 @@ mod tests {
         }
     }
 
+    /// Every edge case of each field: `null` and `{}`, each field missing, unknown keys, and
+    /// negative, fractional, integral-float, string, boolean, null, overflowing, boundary, and
+    /// just-out-of-range values for both numbers, plus numbers where `enabled` wants a boolean.
+    #[test]
+    fn parses_every_edge_case_of_each_field() {
+        let prefix = "node agent has an invalid retry config: ";
+        let complete = |field: &str, value: Value| {
+            let mut retry = json!({"enabled": true, "maxRetries": 2, "initialDelaySeconds": 10});
+            retry[field] = value;
+            retry
+        };
+        let mut cases: Vec<(Value, Result<AgentRetryPolicy, String>)> = vec![
+            (Value::Null, Ok(policy(true, 2, 10))),
+            (json!({}), Err("retry.enabled is required".to_string())),
+            (
+                json!({"enabled": true, "maxRetries": 2, "initialDelaySeconds": 10, "backoff": "x", "nested": {"a": 1}}),
+                Ok(policy(true, 2, 10)),
+            ),
+            (
+                json!({"maxRetries": 2, "initialDelaySeconds": 10}),
+                Err("retry.enabled is required".to_string()),
+            ),
+            (
+                json!({"enabled": true, "initialDelaySeconds": 10}),
+                Err("retry.maxRetries is required".to_string()),
+            ),
+            (
+                json!({"enabled": true, "maxRetries": 2}),
+                Err("retry.initialDelaySeconds is required".to_string()),
+            ),
+            (
+                complete("enabled", json!(1)),
+                Err("retry.enabled must be a boolean, got 1".to_string()),
+            ),
+            (
+                complete("enabled", json!(0)),
+                Err("retry.enabled must be a boolean, got 0".to_string()),
+            ),
+            (
+                complete("enabled", Value::Null),
+                Err("retry.enabled must be a boolean, got null".to_string()),
+            ),
+            (complete("enabled", json!(false)), Ok(policy(false, 2, 10))),
+        ];
+        for (field, max, set) in [
+            (
+                "maxRetries",
+                5_u32,
+                (|n: u32| policy(true, n, 10)) as fn(u32) -> AgentRetryPolicy,
+            ),
+            ("initialDelaySeconds", 300, |n: u32| policy(true, 2, n)),
+        ] {
+            let range = format!("retry.{field} must be an integer from 0 to {max}, got");
+            for (value, shown) in [
+                (json!(-1), "-1"),
+                (json!(1.5), "1.5"),
+                (json!(1.0), "1.0"),
+                (json!("2"), "\"2\""),
+                (json!(true), "true"),
+                (json!(false), "false"),
+                (Value::Null, "null"),
+                (json!(4_294_967_296_u64), "4294967296"),
+                (json!(max + 1), &(max + 1).to_string()),
+            ] {
+                cases.push((complete(field, value), Err(format!("{range} {shown}"))));
+            }
+            for accepted in [0, 1, max] {
+                cases.push((complete(field, json!(accepted)), Ok(set(accepted))));
+            }
+        }
+        for (retry, expected) in cases {
+            let label = retry.to_string();
+            assert_eq!(
+                parse_retry(retry),
+                expected.map_err(|reason| format!("{prefix}{reason}")),
+                "{label}"
+            );
+        }
+    }
+
     /// The wait doubles per retry from the initial delay and never exceeds ten minutes.
     #[test]
     fn waits_double_per_retry_and_are_capped_at_ten_minutes() {
