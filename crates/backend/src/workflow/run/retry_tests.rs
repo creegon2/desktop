@@ -369,7 +369,8 @@ fn structured_output_failure_retries_after_ten_seconds_with_the_failure_injected
     h.fail_with(
         &first.id,
         NodeFailure::new(NodeFailureKind::StructuredOutput, "reply is not JSON")
-            .with_output(Some("plain text".to_string())),
+            .with_output(Some("plain text".to_string()))
+            .with_source_chain(vec!["expected value at line 1 column 1".to_string()]),
         1_000,
     );
 
@@ -440,6 +441,7 @@ fn structured_output_failure_retries_after_ten_seconds_with_the_failure_injected
             attempt: 1,
             kind: "structured_output".to_string(),
             message: "reply is not JSON".to_string(),
+            source_chain: vec!["expected value at line 1 column 1".to_string()],
             recorded_at: 1_000,
             started_at: first.started_at,
             finished_at: Some(1_000),

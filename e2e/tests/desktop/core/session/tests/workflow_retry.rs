@@ -127,6 +127,16 @@ fn a_failed_session_is_retried_automatically_and_the_run_succeeds() -> TestResul
                 .collect::<Vec<_>>(),
             vec![("worker", 1, "session")]
         );
+        // The top-level message of a session failure is generic; the agent's own error text
+        // reaches the attempt history through the source chain.
+        assert!(
+            failed[0]
+                .source_chain
+                .iter()
+                .any(|line| line.contains("fake agent failed prompt 1 of 1 on purpose")),
+            "{:?}",
+            failed[0]
+        );
         // Exactly the one planned prompt failure happened; the retry's prompt went through.
         assert_eq!(
             fs::read_to_string(package_root.join("prompt_failures.txt"))?,

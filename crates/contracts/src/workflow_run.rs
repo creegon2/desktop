@@ -218,7 +218,12 @@ pub struct WorkflowNodeFailedAttempt {
     pub attempt: u32,
     /// Failure kind (snake_case, as in `error_detail.kind`).
     pub kind: String,
+    /// Top-level failure message; for session failures this is generic, and the agent's own
+    /// reason is in `source_chain`.
     pub message: String,
+    /// Source chain of the originating error, outermost first (as in
+    /// `error_detail.source_chain`); empty when the engine raised the failure itself.
+    pub source_chain: Vec<String>,
     /// Unix millis the failure was recorded.
     pub recorded_at: i64,
     pub started_at: Option<i64>,
