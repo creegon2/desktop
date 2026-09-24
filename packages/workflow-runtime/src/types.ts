@@ -174,6 +174,19 @@ export interface WorkflowAgentOutputContract {
   schema: Record<string, unknown>;
 }
 
+/**
+ * Automatic rerun of an Agent node after a retryable failure. Absent on a node means the default
+ * policy (`DEFAULT_WORKFLOW_AGENT_RETRY` in `@ora/workflow-mock`); when present every field is
+ * required and bounded as that package's `WORKFLOW_AGENT_RETRY_BOUNDS` describes.
+ */
+export interface WorkflowAgentRetryPolicy {
+  enabled: boolean;
+  /** Reruns after the first failed attempt. */
+  maxRetries: number;
+  /** Wait before the first rerun; each later wait doubles, capped by the engine. */
+  initialDelaySeconds: number;
+}
+
 /** Transport-neutral execution contract for an Agent node. */
 export interface WorkflowAgentConfig {
   schemaVersion: 3;
@@ -194,6 +207,8 @@ export interface WorkflowAgentConfig {
    */
   /** Optional structured parsing performed in addition to the stable raw output. */
   outputContract?: WorkflowAgentOutputContract;
+  /** Automatic retry after retryable failures; absent means the default policy. */
+  retry?: WorkflowAgentRetryPolicy;
 }
 
 /** Serializable workflow node data shared by memory and future Rust adapters. */
