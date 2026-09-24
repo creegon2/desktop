@@ -70,6 +70,7 @@ function renderInspector(
     runStatus?: GraphWorkflowRunStatus;
     roundStates?: Record<string, GraphWorkflowNodeState[]>;
     selectedRound?: number | null;
+    data?: WorkflowNodeData;
   } = {},
 ) {
   useWorkspaceSelectionStore.getState().selectWorkflowRun("run-1", "project-1");
@@ -106,7 +107,7 @@ function renderInspector(
       <Wrapper>
         <RunActInspector
           nodeId="agent-1"
-          data={AGENT_DATA}
+          data={options.data ?? AGENT_DATA}
           state={nodeState}
           roundStates={options.roundStates}
           selectedRound={options.selectedRound ?? null}
@@ -304,6 +305,102 @@ describe("RunActInspector exhausted automatic retries", () => {
     await settled();
     expect(screen.queryByText(/已自动重试/u)).not.toBeInTheDocument();
     expect(screen.getByText(RESUME_HINT)).toBeInTheDocument();
+  });
+});
+
+describe("RunActInspector failure kinds that are never retried", () => {
+  const NOT_RETRIED = "这类失败不会自动重试";
+
+  function failedWith(
+    autoRetryable: boolean | undefined,
+  ): GraphWorkflowNodeState {
+    return {
+      status: "failed",
+      errorMessage: "prompt references a missing variable",
+      errorDetail: {
+        kind: "prompt_template",
+        message: "prompt references a missing variable",
+        sourceChain: [],
+        attempt: 1,
+        resumable: false,
+        injectsPreviousFailure: false,
+        ...(autoRetryable !== undefined ? { autoRetryable } : {}),
+        recordedAt: 50,
+      },
+      finishedAt: "2026-09-24T06:01:00.000Z",
+    };
+  }
+
+  function agentWith(
+    extra: Partial<NonNullable<WorkflowNodeData["agentConfig"]>>,
+  ): WorkflowNodeData {
+    return {
+      ...AGENT_DATA,
+      agentConfig: { ...AGENT_DATA.agentConfig!, ...extra },
+    };
+  }
+
+  it("explains the immediate failure when the node's retry policy is on", async () => {
+    const { unmount } = renderInspector(failedWith(false), {
+      runStatus: "failed",
+    });
+    await settled();
+    expect(screen.getByRole("alert")).toHaveTextContent(NOT_RETRIED);
+    unmount();
+
+    renderInspector(failedWith(false), {
+      runStatus: "failed",
+      data: agentWith({
+        retry: { enabled: true, maxRetries: 3, initialDelaySeconds: 5 },
+      }),
+    });
+    await settled();
+    expect(screen.getByText(NOT_RETRIED)).toBeInTheDocument();
+  });
+
+  it("stays silent when retry is off, has no budget, or the node is interactive", async () => {
+    for (const data of [
+      agentWith({
+        retry: { enabled: false, maxRetries: 2, initialDelaySeconds: 10 },
+      }),
+      agentWith({
+        retry: { enabled: true, maxRetries: 0, initialDelaySeconds: 10 },
+      }),
+      agentWith({ interactive: true }),
+    ]) {
+      const { unmount } = renderInspector(failedWith(false), {
+        runStatus: "failed",
+        data,
+      });
+      await settled();
+      expect(screen.queryByText(NOT_RETRIED)).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("stays silent for a retryable kind and for rows without the recorded flag", async () => {
+    for (const autoRetryable of [true, undefined]) {
+      const { unmount } = renderInspector(failedWith(autoRetryable), {
+        runStatus: "failed",
+      });
+      await settled();
+      expect(screen.queryByText(NOT_RETRIED)).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("uses the English copy in the English UI", async () => {
+    await appI18n.changeLanguage("en-US");
+    try {
+      renderInspector(failedWith(false), { runStatus: "failed" });
+      expect(
+        await screen.findByText(
+          "This kind of failure is not retried automatically",
+        ),
+      ).toBeInTheDocument();
+    } finally {
+      await appI18n.changeLanguage("zh-CN");
+    }
   });
 });
 

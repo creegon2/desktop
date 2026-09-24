@@ -14,6 +14,7 @@ import {
   junctionFailureStrategyLabel,
   junctionWaitStrategyLabel,
 } from "../workflow-node-chrome";
+import { resolveAgentRetryDisplay } from "./agent-config-display";
 import { RunActAgentConfig } from "./run-act-agent-config";
 import { RunActArtifacts } from "./run-act-artifacts";
 import { RunActFailedAttempts } from "./run-act-failed-attempts";
@@ -313,6 +314,12 @@ function RunActInspectorPanel({
       ? 0
       : state.autoRetry.retry - (state.startedAt === undefined ? 1 : 0);
   const agentConfig = data.agentConfig;
+  // An agent whose retry policy is on failed at once: say that this kind of failure is not
+  // retried, so the policy does not look broken. Rows without the recorded flag say nothing.
+  const failureKindNotRetried =
+    agentConfig !== undefined &&
+    resolveAgentRetryDisplay(agentConfig).kind === "enabled" &&
+    state.errorDetail?.autoRetryable === false;
   const canEdit = editable && onPatchNode !== undefined;
   const promptLabel = nodeType.configFields.includes("initialPrompt")
     ? t("settings.workflow.field.initialPrompt")
@@ -643,6 +650,9 @@ function RunActInspectorPanel({
                         count: state.errorDetail.attempt,
                       })}
                     </p>
+                    {failureKindNotRetried && (
+                      <p>{t("workflowRun.retry.kindNotRetried")}</p>
+                    )}
                     {state.errorDetail.resumable === false &&
                       state.errorDetail.injectsPreviousFailure === true && (
                         <p>{t("workflowRun.errorInjectedResumeHint")}</p>

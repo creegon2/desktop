@@ -143,6 +143,11 @@ pub struct NodeFailureDetail {
     /// Whether a same-version rerun of this node injects this failure into the agent prompt;
     /// mirrors `NodeFailureKind::inject_into_prompt`.
     pub injects_previous_failure: bool,
+    /// Whether this kind of failure is retried automatically when the node's retry policy is on;
+    /// mirrors `NodeFailureKind::auto_retry`. The run view uses it to say why an agent with retry
+    /// on failed at once. Absent on rows written before the field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_retryable: Option<bool>,
     /// Unix millis, the repository's `now`.
     pub recorded_at: i64,
 }
@@ -364,13 +369,29 @@ mod tests {
             attempt: 2,
             resumable: true,
             injects_previous_failure: false,
+            auto_retryable: Some(false),
             recorded_at: 1_700_000_000_000,
         };
         let json = serde_json::to_string(&detail).unwrap();
         let parsed: NodeFailureDetail = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, detail);
         assert!(json.contains(
-            "\"resumable\":true,\"injects_previous_failure\":false,\"recorded_at\":1700000000000"
+            "\"resumable\":true,\"injects_previous_failure\":false,\"auto_retryable\":false,\"recorded_at\":1700000000000"
         ));
+    }
+
+    /// Rows written before `auto_retryable` existed still parse, and say nothing about retry.
+    #[test]
+    fn node_failure_detail_without_auto_retryable_parses_as_unknown() {
+        let parsed: NodeFailureDetail = serde_json::from_str(
+            r#"{"kind":"session","message":"m","source_chain":[],"attempt":1,"resumable":true,"injects_previous_failure":false,"recorded_at":5}"#,
+        )
+        .unwrap();
+        assert_eq!(parsed.auto_retryable, None);
+        assert!(
+            !serde_json::to_string(&parsed)
+                .unwrap()
+                .contains("auto_retryable")
+        );
     }
 }

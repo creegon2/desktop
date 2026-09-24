@@ -237,7 +237,8 @@ Failed nodes stay visible. When a node fails, the run fails immediately (D2) whi
 in-flight siblings keep running to completion and remain bindable; the scheduler then
 dispatches nothing on a `Failed` or `Cancelled` run. `payload.error_detail` on the failed
 node-run records `kind`, `message`, `source_chain`, `attempt`, `resumable`,
-`injects_previous_failure`, and `recorded_at`. `kind` is a mechanical classification, never
+`injects_previous_failure`, `auto_retryable` (whether automatic retry covers this kind, see
+below; absent on rows written before the field existed), and `recorded_at`. `kind` is a mechanical classification, never
 inferred by a model.
 
 `resumable` predicts whether re-running the same snapshot is a sensible first move
@@ -460,6 +461,12 @@ is 0. A failed or cancelled row that carries `auto_retry` but never started show
 automatic retry was scheduled but never started". A row cancelled with
 `{"reason":"retry_abandoned"}` shows "The run ended while this node was waiting to retry, so the
 retry never started" instead of the raw error and no second note.
+
+**Failures that are never retried.** When an agent whose retry policy is on (enabled, with at
+least one retry, not interactive) fails with a kind automatic retry does not cover
+(`error_detail.auto_retryable` is false), the failure block adds "This kind of failure is not
+retried automatically", so an immediate failure does not look like a broken policy. Rows
+without `auto_retryable` show nothing extra.
 
 ### Entities and tables
 

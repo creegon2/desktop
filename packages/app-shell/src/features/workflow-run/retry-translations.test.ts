@@ -80,6 +80,10 @@ const RETRY_STRINGS: Record<string, { "zh-CN": string; "en-US": string }> = {
     "en-US":
       "The run ended while this node was waiting to retry, so the retry never started",
   },
+  "workflowRun.retry.kindNotRetried": {
+    "zh-CN": "这类失败不会自动重试",
+    "en-US": "This kind of failure is not retried automatically",
+  },
 };
 
 const LOCALES = ["zh-CN", "en-US"] as const;

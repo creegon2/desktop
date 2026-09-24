@@ -355,6 +355,11 @@ export interface WorkflowNodeErrorDetail {
   attempt: number;
   resumable: boolean;
   injectsPreviousFailure: boolean;
+  /**
+   * Whether this kind of failure is retried automatically when the node's retry policy is on.
+   * Absent on rows the backend wrote before it recorded the field.
+   */
+  autoRetryable?: boolean;
   recordedAt: number;
 }
 

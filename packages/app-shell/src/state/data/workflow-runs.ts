@@ -886,6 +886,7 @@ function parseErrorDetail(value: unknown): WorkflowNodeErrorDetail | undefined {
     attempt?: unknown;
     resumable?: unknown;
     injects_previous_failure?: unknown;
+    auto_retryable?: unknown;
     recorded_at?: unknown;
   };
   if (typeof detail.kind !== "string") {
@@ -905,6 +906,10 @@ function parseErrorDetail(value: unknown): WorkflowNodeErrorDetail | undefined {
       typeof detail.injects_previous_failure === "boolean"
         ? detail.injects_previous_failure
         : false,
+    // Older rows lack the field; leaving it absent keeps the view from guessing.
+    ...(typeof detail.auto_retryable === "boolean"
+      ? { autoRetryable: detail.auto_retryable }
+      : {}),
     recordedAt: typeof detail.recorded_at === "number" ? detail.recorded_at : 0,
   };
 }

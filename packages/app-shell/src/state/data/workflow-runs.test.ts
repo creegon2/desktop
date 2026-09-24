@@ -582,6 +582,55 @@ describe("buildDisplayRun", () => {
     );
   });
 
+  it.each([
+    { recorded: "true", expected: true },
+    { recorded: "false", expected: false },
+  ])(
+    "projects autoRetryable $expected when the row recorded it",
+    ({ recorded, expected }) => {
+      const withError = {
+        ...detail,
+        nodes: [
+          {
+            nodeId: "explore",
+            status: "failed",
+            startedAt: 10n,
+            finishedAt: 30n,
+            error: "bad prompt",
+            output: null,
+            payload: `{"error_detail":{"kind":"prompt_template","message":"bad prompt","source_chain":[],"attempt":1,"resumable":false,"injects_previous_failure":false,"auto_retryable":${recorded},"recorded_at":50}}`,
+          },
+        ],
+      };
+      const display = buildDisplayRun(withError, GRAPH);
+      expect(display.nodeStates.explore.errorDetail?.autoRetryable).toBe(
+        expected,
+      );
+    },
+  );
+
+  it("leaves autoRetryable absent on rows written before the backend recorded it", () => {
+    const withError = {
+      ...detail,
+      nodes: [
+        {
+          nodeId: "explore",
+          status: "failed",
+          startedAt: 10n,
+          finishedAt: 30n,
+          error: "bad prompt",
+          output: null,
+          payload:
+            '{"error_detail":{"kind":"prompt_template","message":"bad prompt","source_chain":[],"attempt":1,"resumable":false,"injects_previous_failure":false,"recorded_at":50}}',
+        },
+      ],
+    };
+    const display = buildDisplayRun(withError, GRAPH);
+    expect(display.nodeStates.explore.errorDetail).not.toHaveProperty(
+      "autoRetryable",
+    );
+  });
+
   it("projects injectedFailureContext from payload.injected_failure_context", () => {
     const withInjected = {
       ...detail,

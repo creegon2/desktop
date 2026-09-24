@@ -363,6 +363,7 @@ export const workflowRunTranslations = {
     "workflowRun.retry.exhausted_other": "已自动重试 {{count}} 次，仍然失败",
     "workflowRun.retry.abandoned": "运行在等待自动重试时结束，这次重试没有开始",
     "workflowRun.retry.notStarted": "这次自动重试已安排，但没有开始",
+    "workflowRun.retry.kindNotRetried": "这类失败不会自动重试",
   },
   "en-US": {
     "errors.workflow_no_published_snapshot":
@@ -767,5 +768,7 @@ export const workflowRunTranslations = {
       "The run ended while this node was waiting to retry, so the retry never started",
     "workflowRun.retry.notStarted":
       "This automatic retry was scheduled but never started",
+    "workflowRun.retry.kindNotRetried":
+      "This kind of failure is not retried automatically",
   },
 } as const;

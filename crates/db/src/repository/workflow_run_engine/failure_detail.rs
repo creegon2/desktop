@@ -76,6 +76,7 @@ pub(super) fn persist_failed_node_run(
         attempt,
         resumable: failure.kind.resumable(),
         injects_previous_failure: failure.kind.inject_into_prompt(),
+        auto_retryable: Some(failure.kind.auto_retry()),
         recorded_at: now,
     };
     let payload = merge_error_detail(current_payload, &detail, &failure.file_changes)?;

@@ -190,7 +190,8 @@ Start 表单控件与变量类型分离：文本、段落、选择框、数字�
 失败节点保持可见。某个节点失败时，运行立即失败（D2），仍在执行的兄弟节点会跑完且仍可绑定；
 调度器随后不会再向 `Failed` / `Cancelled` 运行派发新节点。失败节点的
 `payload.error_detail` 记录 `kind`、`message`、`source_chain`、`attempt`、`resumable`、
-`injects_previous_failure`、`recorded_at`。`kind` 是机械分类，从不由模型推断。
+`injects_previous_failure`、`auto_retryable`（这类失败是否会自动重试，见下文；该字段出现之前
+写入的行没有它）、`recorded_at`。`kind` 是机械分类，从不由模型推断。
 
 `resumable` 只表示「同一快照再跑一次是否像环境/瞬时问题」，不决定界面是否允许续跑——失败或
 已取消且空闲的运行始终可以续跑：
@@ -366,6 +367,11 @@ retry, max_retries, delay_ms, scheduled_at, due_at, previous_node_run_id}`。因
 开始的失败或取消行显示「这次自动重试已安排，但没有开始」。以 `{"reason":"retry_abandoned"}`
 取消的行显示「运行在等待自动重试时结束，这次重试没有开始」，不再显示原始错误文本，也不再显示
 第二条说明。
+
+**不会自动重试的失败。** 重试策略开启（已启用、最多重试次数至少为 1、不是交互模式）的智能体
+节点，如果因为自动重试不覆盖的失败类型而失败（`error_detail.auto_retryable` 为 false），失败
+信息里会多一行「这类失败不会自动重试」，免得立即失败看起来像重试设置没有生效。没有
+`auto_retryable` 字段的行不显示这一行。
 
 ### 实体与状态
 

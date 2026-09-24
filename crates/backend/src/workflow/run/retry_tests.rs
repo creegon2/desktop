@@ -514,29 +514,31 @@ fn three_session_failures_wait_ten_then_twenty_seconds_and_then_fail_the_run() {
     );
 }
 
+/// Every failure kind and whether automatic retry covers it.
+const KIND_RETRIES: [(NodeFailureKind, bool); 17] = [
+    (NodeFailureKind::Session, true),
+    (NodeFailureKind::SessionEndedWithoutStopReason, true),
+    (NodeFailureKind::SessionBindingRejected, true),
+    (NodeFailureKind::StructuredOutput, true),
+    (NodeFailureKind::AgentRefusal, true),
+    (NodeFailureKind::UnknownStopReason, true),
+    (NodeFailureKind::MissingAgentRef, false),
+    (NodeFailureKind::WorkflowModelNotFound, false),
+    (NodeFailureKind::MissingAgentConfig, false),
+    (NodeFailureKind::InvalidRunPayload, false),
+    (NodeFailureKind::PromptTemplate, false),
+    (NodeFailureKind::MissingSkillMaterialization, false),
+    (NodeFailureKind::BaselinePersist, false),
+    (NodeFailureKind::Repository, false),
+    (NodeFailureKind::InterruptedByRestart, false),
+    (NodeFailureKind::MultipleOutputs, false),
+    (NodeFailureKind::ConditionEvaluation, false),
+];
+
 /// Test 3: exactly the session and agent-answer kinds schedule a retry through the engine.
 #[test]
 fn only_session_and_agent_answer_failures_schedule_a_retry() {
-    let kinds = [
-        (NodeFailureKind::Session, true),
-        (NodeFailureKind::SessionEndedWithoutStopReason, true),
-        (NodeFailureKind::SessionBindingRejected, true),
-        (NodeFailureKind::StructuredOutput, true),
-        (NodeFailureKind::AgentRefusal, true),
-        (NodeFailureKind::UnknownStopReason, true),
-        (NodeFailureKind::MissingAgentRef, false),
-        (NodeFailureKind::WorkflowModelNotFound, false),
-        (NodeFailureKind::MissingAgentConfig, false),
-        (NodeFailureKind::InvalidRunPayload, false),
-        (NodeFailureKind::PromptTemplate, false),
-        (NodeFailureKind::MissingSkillMaterialization, false),
-        (NodeFailureKind::BaselinePersist, false),
-        (NodeFailureKind::Repository, false),
-        (NodeFailureKind::InterruptedByRestart, false),
-        (NodeFailureKind::MultipleOutputs, false),
-        (NodeFailureKind::ConditionEvaluation, false),
-    ];
-    let observed: Vec<_> = kinds
+    let observed: Vec<_> = KIND_RETRIES
         .iter()
         .map(|(kind, _)| {
             let h = Harness::start(&linear(json!({})));
@@ -551,7 +553,32 @@ fn only_session_and_agent_answer_failures_schedule_a_retry() {
             )
         })
         .collect();
-    assert_eq!(observed, kinds.to_vec());
+    assert_eq!(observed, KIND_RETRIES.to_vec());
+}
+
+/// Every recorded failure says whether its kind is retried automatically, also when the node's
+/// policy is off: the run view uses it to explain why an agent with retry on failed at once.
+#[test]
+fn every_failure_records_whether_its_kind_is_retried_automatically() {
+    for (kind, retried) in KIND_RETRIES {
+        for policy in [json!({}), retry(false, 0, 0)] {
+            let h = Harness::start(&linear(policy.clone()));
+            let first = h.running("a");
+            h.fail(&first.id, kind, 1_000);
+            let recorded = h
+                .detail()
+                .failed_attempts
+                .into_iter()
+                .chain(h.rows_of("a"))
+                .find(|row| row.id == first.id)
+                .unwrap();
+            assert_eq!(
+                Harness::error_detail(&recorded)["auto_retryable"],
+                json!(retried),
+                "{kind:?} under {policy}"
+            );
+        }
+    }
 }
 
 /// Test 4: a disabled policy, a zero budget, and interactive nodes never retry; a node without
