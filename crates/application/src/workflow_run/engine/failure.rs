@@ -77,6 +77,33 @@ impl NodeFailureKind {
         }
     }
 
+    /// `true` = the attempt ended in a way a fresh attempt of the same node can plausibly clear
+    /// on its own: the session broke, or the agent's answer was unusable. An agent node's
+    /// policy then retries it automatically (see `AgentRetryPolicy`). Definition, environment
+    /// setup, and engine failures are `false`: repeating them unchanged cannot help, and an
+    /// interrupted attempt belongs to the boot sweep.
+    pub const fn auto_retry(self) -> bool {
+        match self {
+            Self::Session
+            | Self::SessionEndedWithoutStopReason
+            | Self::SessionBindingRejected
+            | Self::StructuredOutput
+            | Self::AgentRefusal
+            | Self::UnknownStopReason => true,
+            Self::PromptTemplate
+            | Self::MissingAgentRef
+            | Self::InvalidRunPayload
+            | Self::MissingSkillMaterialization
+            | Self::ConditionEvaluation
+            | Self::MultipleOutputs
+            | Self::WorkflowModelNotFound
+            | Self::MissingAgentConfig
+            | Self::Repository
+            | Self::BaselinePersist
+            | Self::InterruptedByRestart => false,
+        }
+    }
+
     /// The serialized snake_case name (same string serde produces); used as a translation key.
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -264,6 +291,38 @@ mod tests {
             NodeFailureKind::ConditionEvaluation.inject_into_prompt(),
             false
         );
+    }
+
+    /// Exactly the six session-class and agent-answer kinds retry automatically; the other
+    /// eleven fail the attempt for good. Listing every kind keeps a new kind from slipping in
+    /// without a decision.
+    #[test]
+    fn auto_retry_covers_exactly_the_session_and_agent_answer_kinds() {
+        let table = [
+            (NodeFailureKind::Session, true),
+            (NodeFailureKind::SessionEndedWithoutStopReason, true),
+            (NodeFailureKind::SessionBindingRejected, true),
+            (NodeFailureKind::StructuredOutput, true),
+            (NodeFailureKind::AgentRefusal, true),
+            (NodeFailureKind::UnknownStopReason, true),
+            (NodeFailureKind::PromptTemplate, false),
+            (NodeFailureKind::MissingAgentRef, false),
+            (NodeFailureKind::InvalidRunPayload, false),
+            (NodeFailureKind::MissingSkillMaterialization, false),
+            (NodeFailureKind::ConditionEvaluation, false),
+            (NodeFailureKind::MultipleOutputs, false),
+            (NodeFailureKind::WorkflowModelNotFound, false),
+            (NodeFailureKind::MissingAgentConfig, false),
+            (NodeFailureKind::Repository, false),
+            (NodeFailureKind::BaselinePersist, false),
+            (NodeFailureKind::InterruptedByRestart, false),
+        ];
+        let actual: Vec<(NodeFailureKind, bool)> = table
+            .iter()
+            .map(|(kind, _)| (*kind, kind.auto_retry()))
+            .collect();
+        assert_eq!(actual, table.to_vec());
+        assert_eq!(table.iter().filter(|(_, retries)| *retries).count(), 6);
     }
 
     #[test]

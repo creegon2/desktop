@@ -25,6 +25,7 @@ mod node_runtime;
 mod node_type;
 mod ports;
 mod region;
+mod retry;
 mod skill_delivery;
 mod snapshot_switch;
 mod start_input;
@@ -58,6 +59,11 @@ pub use ports::{
     WorkflowRunInvalidationPublisher, WorkflowRunWorkspaceInitializer,
 };
 pub use region::{resume_clear_node_ids, resume_unit_owner_id, running_row_blocks_resume};
+pub use retry::{
+    AUTO_RETRY_KEY, AgentRetryPolicy, BeginNodeRetryResult, NoRetryTimer, NodeAutoRetry,
+    NodeRetryToSchedule, NodeRetryWait, RETRY_WAIT_KEY, ScheduleNodeRetryResult,
+    WorkflowRetryRepository, WorkflowRetryTimer,
+};
 pub use skill_delivery::{
     AgentSkillDelivery, AgentSkillDeliveryError, AgentSkillDeliveryProvider,
     MaterializedSkillBinding, SkillDiscoveryRoots, SkillMaterializationReceipt, WorkflowRunPayload,

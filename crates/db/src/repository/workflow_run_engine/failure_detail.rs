@@ -5,12 +5,13 @@ use ora_domain::{
 use rusqlite::{Transaction, params};
 
 use super::payload_json::{file_changes_json, merge_payload_keys};
+use super::retry::RETRY_WAIT_PATH;
 
 /// Error written to node runs and runs interrupted by a backend restart.
 pub(super) const INTERRUPTED_BY_RESTART: &str = r#"{"reason":"interrupted_by_restart"}"#;
 
 /// Counts prior soft-deleted attempts of this `(node_id, iteration)` pair in the same run.
-fn deleted_attempt_count(
+pub(super) fn deleted_attempt_count(
     transaction: &Transaction<'_>,
     run_id: &str,
     node_id: &str,
@@ -67,8 +68,9 @@ pub(super) fn persist_failed_node_run(
         recorded_at: now,
     };
     let payload = merge_error_detail(current_payload, &detail, &failure.file_changes)?;
+    // A waiting attempt failed by the boot sweep is no longer waiting.
     transaction.execute(
-        "UPDATE workflow_node_runs SET status = ?2, error = ?3, output = ?4, payload = ?5, finished_at = ?6, updated_at = ?6
+        "UPDATE workflow_node_runs SET status = ?2, error = ?3, output = ?4, payload = json_remove(?5, ?7), finished_at = ?6, updated_at = ?6
          WHERE id = ?1 AND is_deleted = 0",
         params![
             node_run_id,
@@ -77,6 +79,7 @@ pub(super) fn persist_failed_node_run(
             &failure.output,
             payload,
             now,
+            RETRY_WAIT_PATH,
         ],
     )?;
     Ok(())

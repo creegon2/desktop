@@ -1,9 +1,9 @@
 use ora_contracts::{
     WorkflowExecutionScope as ContractExecutionScope,
     WorkflowExecutionScopeStatus as ContractExecutionScopeStatus,
-    WorkflowNodeRun as ContractNodeRun, WorkflowNodeStatus as ContractNodeStatus,
-    WorkflowRun as ContractRun, WorkflowRunStatus as ContractRunStatus,
-    WorkflowRunSummary as ContractRunSummary,
+    WorkflowNodeFailedAttempt as ContractFailedAttempt, WorkflowNodeRun as ContractNodeRun,
+    WorkflowNodeStatus as ContractNodeStatus, WorkflowRun as ContractRun,
+    WorkflowRunStatus as ContractRunStatus, WorkflowRunSummary as ContractRunSummary,
 };
 use ora_domain::{
     WorkflowExecutionScope, WorkflowNodeRun, WorkflowNodeStatus, WorkflowRun, WorkflowRunStatus,
@@ -61,6 +61,28 @@ pub(crate) fn map_node_run(node_run: WorkflowNodeRun) -> ContractNodeRun {
         created_at: node_run.audit_fields.created_at,
         updated_at: node_run.audit_fields.updated_at,
     }
+}
+
+/// Converts one soft-deleted failed attempt into an attempt-history entry. Rows without a
+/// readable `payload.error_detail` (written before failure details existed) are skipped.
+pub(crate) fn map_failed_attempt(node_run: WorkflowNodeRun) -> Option<ContractFailedAttempt> {
+    let mut payload: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(node_run.payload.as_deref()?).ok()?;
+    let detail: crate::NodeFailureDetail =
+        serde_json::from_value(payload.remove("error_detail")?).ok()?;
+    Some(ContractFailedAttempt {
+        node_run_id: node_run.id.to_string(),
+        node_id: node_run.node_id,
+        scope_id: node_run.scope_id.to_string(),
+        iteration: node_run.iteration,
+        session_id: node_run.session_id.map(|id| id.to_string()),
+        attempt: detail.attempt,
+        kind: detail.kind.as_str().to_string(),
+        message: detail.message,
+        recorded_at: detail.recorded_at,
+        started_at: node_run.started_at,
+        finished_at: node_run.finished_at,
+    })
 }
 
 /// Converts one internal Loop round identity into its history contract.

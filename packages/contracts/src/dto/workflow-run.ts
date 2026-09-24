@@ -96,6 +96,11 @@ export type GetWorkflowRunResponse = {
    * Condition decisions keyed by node id for branch-aware rendering.
    */
   conditionDecisions: { [key in string]: string };
+  /**
+   * Earlier attempts that failed and were run again (automatic retry, resume) or whose run
+   * was restarted, oldest first. `nodes` holds only the latest attempt of each node.
+   */
+  failedAttempts?: Array<WorkflowNodeFailedAttempt>;
 };
 
 /**
@@ -317,6 +322,41 @@ export type WorkflowNodeAiDiagnosis = {
   agentCli: string;
   model: string;
   generatedAt: bigint;
+};
+
+/**
+ * One earlier failed attempt of a node, taken from its persisted `payload.error_detail`.
+ */
+export type WorkflowNodeFailedAttempt = {
+  /**
+   * Id of the attempt's (soft-deleted) node run.
+   */
+  nodeRunId: string;
+  nodeId: string;
+  scopeId: string;
+  /**
+   * Composite-region round of the attempt; `null` for outer and Loop rows.
+   */
+  iteration: number | null;
+  /**
+   * The attempt's session, whose transcript remains readable.
+   */
+  sessionId: string | null;
+  /**
+   * Same numbering as `error_detail.attempt`: 1 for the node's first attempt in the run.
+   */
+  attempt: number;
+  /**
+   * Failure kind (snake_case, as in `error_detail.kind`).
+   */
+  kind: string;
+  message: string;
+  /**
+   * Unix millis the failure was recorded.
+   */
+  recordedAt: bigint;
+  startedAt: bigint | null;
+  finishedAt: bigint | null;
 };
 
 /**
