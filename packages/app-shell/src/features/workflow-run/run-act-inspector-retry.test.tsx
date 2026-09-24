@@ -390,17 +390,15 @@ describe("RunActInspector failure kinds that are never retried", () => {
   });
 
   it("uses the English copy in the English UI", async () => {
+    // The file-level afterEach restores zh-CN after unmounting; switching back here would
+    // re-render the mounted inspector outside act.
     await appI18n.changeLanguage("en-US");
-    try {
-      renderInspector(failedWith(false), { runStatus: "failed" });
-      expect(
-        await screen.findByText(
-          "This kind of failure is not retried automatically",
-        ),
-      ).toBeInTheDocument();
-    } finally {
-      await appI18n.changeLanguage("zh-CN");
-    }
+    renderInspector(failedWith(false), { runStatus: "failed" });
+    await settled();
+
+    expect(
+      screen.getByText("This kind of failure is not retried automatically"),
+    ).toBeInTheDocument();
   });
 });
 
