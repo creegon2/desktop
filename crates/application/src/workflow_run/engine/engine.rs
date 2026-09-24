@@ -283,7 +283,7 @@ where
             return Ok(());
         };
         let now = self.clock.now_timestamp_millis();
-        if self.schedule_retry(run_id, &node_run, &failure, now)? {
+        if self.schedule_retry(run_id, &node_run, &failure, now) {
             return Ok(());
         }
         let propagation = self.failure_propagation(run_id, &node_run)?;

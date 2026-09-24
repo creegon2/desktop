@@ -34,7 +34,29 @@ where
     /// Returns `true` when the failure is consumed (a retry was scheduled, or the callback was
     /// stale) and `false` when the normal failure path must run: the node has no policy, the
     /// kind does not retry, the budget is spent, or the run already left `Running`.
+    ///
+    /// An error while deciding also returns `false`. Nothing was persisted yet, and the node's
+    /// session has already ended, so failing the node is the only way to keep the run from
+    /// waiting on a `Running` row that nothing drives.
     pub(super) fn schedule_retry(
+        &self,
+        run_id: &WorkflowRunId,
+        node_run: &WorkflowNodeRun,
+        failure: &NodeFailure,
+        now: i64,
+    ) -> bool {
+        self.try_schedule_retry(run_id, node_run, failure, now)
+            .unwrap_or_else(|error| {
+                ora_logging::ora_warn!(
+                    error = %error,
+                    node_run_id = %node_run.id,
+                    "could not decide an automatic retry; failing the attempt instead"
+                );
+                false
+            })
+    }
+
+    fn try_schedule_retry(
         &self,
         run_id: &WorkflowRunId,
         node_run: &WorkflowNodeRun,
@@ -116,9 +138,47 @@ where
         };
         self.run_events.publish_run_invalidated(run_id);
 
-        // Dispatch exactly as the original attempt was dispatched: root-scope rows (outer nodes
-        // and iteration region members) run against the outer graph and the run pool; a Loop
-        // round's rows run against the Loop body and that round's isolated pool.
+        // The attempt is started now, so from here on an error must fail it: returning the error
+        // would leave a `Running` row that no executor and no timer will ever finish.
+        let failure = match self.dispatch_started_retry(run_id, &node_run) {
+            Ok(true) => return Ok(()),
+            Ok(false) => NodeFailure::new(
+                NodeFailureKind::InvalidRunPayload,
+                format!(
+                    "retry of node {} has no executable target in its scope",
+                    node_run.node_id
+                ),
+            ),
+            Err(error) => {
+                let kind = match &error {
+                    EngineError::Repository(_) => NodeFailureKind::Repository,
+                    EngineError::WorkflowRunNotFound { .. }
+                    | EngineError::GraphParse(_)
+                    | EngineError::Validation(_)
+                    | EngineError::LoopState { .. } => NodeFailureKind::InvalidRunPayload,
+                };
+                NodeFailure::new(
+                    kind,
+                    format!(
+                        "retry of node {} could not be dispatched: {error}",
+                        node_run.node_id
+                    ),
+                )
+            }
+        };
+        self.fail_node(run_id, &node_run.id, failure)
+    }
+
+    /// Dispatches a started retry exactly as the original attempt was dispatched: root-scope
+    /// rows (outer nodes and iteration region members) run against the outer graph and the run
+    /// pool; a Loop round's rows run against the Loop body and that round's isolated pool.
+    ///
+    /// Returns `false` when the attempt's scope has no executable target.
+    fn dispatch_started_retry(
+        &self,
+        run_id: &WorkflowRunId,
+        node_run: &WorkflowNodeRun,
+    ) -> Result<bool, EngineError> {
         let context = self.execution_context(run_id)?;
         let graph = WorkflowGraph::parse(&context.graph_json)?;
         let mut target = None;
@@ -161,19 +221,8 @@ where
                 &node_run.scope_id,
                 &pool,
             );
-            return Ok(());
+            return Ok(true);
         }
-        // The attempt started but nothing can drive it; fail it rather than leave it Running.
-        self.fail_node(
-            run_id,
-            &node_run.id,
-            NodeFailure::new(
-                NodeFailureKind::InvalidRunPayload,
-                format!(
-                    "retry of node {} has no executable target in its scope",
-                    node_run.node_id
-                ),
-            ),
-        )
+        Ok(false)
     }
 }
