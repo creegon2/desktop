@@ -397,9 +397,13 @@ pub(super) fn list_node_runs(
 
 /// Returns the most recent soft-deleted failed attempt of one `(node_id, iteration)` pair.
 ///
-/// A failure that a later live attempt of the same pair already recovered from (an automatic
-/// retry that succeeded) is history, not the previous attempt: a Loop round that follows it
-/// must not inherit it.
+/// A failure that a later attempt of the same pair already recovered from (an automatic retry
+/// that succeeded) is history, not the previous attempt: a Loop round that follows it must not
+/// inherit it. The recovering attempt counts even after a resume or restart soft-deleted it,
+/// because its success still fixed that failure.
+///
+/// Only attempts that started count: a waiting retry that a restart failed before it ran
+/// (`started_at` NULL) must not hide the attempt that really failed.
 pub(super) fn find_last_failed_attempt(
     connection: &rusqlite::Connection,
     run_id: &WorkflowRunId,
@@ -411,11 +415,12 @@ pub(super) fn find_last_failed_attempt(
                 started_at, finished_at, created_at, updated_at, is_deleted
          FROM workflow_node_runs failed
          WHERE run_id = ?1 AND node_id = ?2 AND is_deleted = 1 AND status = ?3 AND iteration IS ?4
+           AND started_at IS NOT NULL
            AND NOT EXISTS (
                SELECT 1 FROM workflow_node_runs later
                WHERE later.run_id = failed.run_id AND later.node_id = failed.node_id
-                 AND later.iteration IS failed.iteration AND later.is_deleted = 0
-                 AND later.status = ?5 AND later.created_at >= failed.created_at)
+                 AND later.iteration IS failed.iteration AND later.status = ?5
+                 AND later.created_at >= failed.created_at)
          ORDER BY created_at DESC, id DESC
          LIMIT 1",
     )?;
