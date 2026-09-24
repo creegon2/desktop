@@ -10,7 +10,7 @@ use ora_application::{
     NodeAutoRetry, NodeFailureKind, ResumeWorkflowRunResult, WorkflowRunEngineRepository,
     WorkflowRunPayload,
 };
-use ora_domain::{WorkflowNodeStatus, WorkflowRunStatus};
+use ora_domain::{WorkflowNodeRunId, WorkflowNodeStatus, WorkflowRunStatus, WorkflowScopeStatus};
 use pretty_assertions::assert_eq;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -108,6 +108,43 @@ fn dispatched_rounds(h: &Harness) -> Vec<Value> {
 
 fn run_payload(h: &Harness) -> WorkflowRunPayload {
     serde_json::from_str(h.run().payload.as_deref().unwrap()).unwrap()
+}
+
+fn connection(h: &Harness) -> rusqlite::Connection {
+    rusqlite::Connection::open(h.temp.path().join("repository.sqlite3")).unwrap()
+}
+
+/// `(round_index, status)` of every round scope owned by one Loop row, oldest first.
+fn loop_rounds(h: &Harness, loop_run_id: &WorkflowNodeRunId) -> Vec<(u32, WorkflowScopeStatus)> {
+    let connection = connection(h);
+    let mut statement = connection
+        .prepare(
+            "SELECT round_index, status FROM workflow_execution_scopes
+             WHERE parent_loop_node_run_id = ?1 ORDER BY round_index",
+        )
+        .unwrap();
+    statement
+        .query_map(rusqlite::params![loop_run_id.as_ref()], |row| {
+            Ok((
+                row.get::<_, u32>(0)?,
+                WorkflowScopeStatus::from_database_value(row.get::<_, i64>(1)?).unwrap(),
+            ))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+}
+
+/// Soft-deleted rows of one node in the harness run.
+fn deleted_rows(h: &Harness, node_id: &str) -> i64 {
+    connection(h)
+        .query_row(
+            "SELECT COUNT(*) FROM workflow_node_runs
+             WHERE run_id = ?1 AND node_id = ?2 AND is_deleted = 1",
+            rusqlite::params![h.run_id.as_ref(), node_id],
+            |row| row.get(0),
+        )
+        .unwrap()
 }
 
 /// Test 11: a failed round is retried inside that round with the round's own item; rounds 1
@@ -428,13 +465,20 @@ fn an_exhausted_retry_inside_a_loop_fails_the_loop_and_abandons_other_waits() {
 }
 
 /// Test 7 across scopes: an outer node's final failure fails the run while a Loop body retry
-/// waits. The Loop row keeps running as every in-flight outer sibling does, but the waiting
-/// attempt is abandoned so its timer starts nothing; resume reruns it inside the same round
-/// with a fresh budget, next to the rerun outer node.
+/// waits in round 2. The Loop row keeps running as every in-flight outer sibling does, but the
+/// waiting attempt is abandoned so its timer starts nothing. The abandoned body row makes the
+/// Loop the resume unit, exactly as for an Iteration: the preview offers the resume with the
+/// Loop as unit, and resume closes both rounds, soft-deletes their rows, and restarts the Loop
+/// from round 1 with a fresh budget instead of resuming inside the open round.
 #[test]
-fn an_outer_final_failure_abandons_a_retry_waiting_inside_a_loop() {
+fn an_outer_final_failure_abandons_a_loop_wait_and_resume_restarts_the_loop_from_round_one() {
     let h = Harness::start(&loop_graph(json!({}), Some(retry(false, 0, 0))));
-    h.fail(&h.running("writer").id, NodeFailureKind::Session, 1_000);
+    let loop_old = h.rows_of("loop")[0].id.clone();
+    let round_one = h.running("writer");
+    h.complete(&round_one.id, "again", 500);
+    let round_two = h.running("writer");
+    assert_ne!(round_two.scope_id, round_one.scope_id);
+    h.fail(&round_two.id, NodeFailureKind::Session, 1_000);
     let waiting = h.running("writer");
     h.fail(&h.running("a").id, NodeFailureKind::Session, 2_000);
 
@@ -444,31 +488,78 @@ fn an_outer_final_failure_abandons_a_retry_waiting_inside_a_loop() {
         (
             &abandoned.id,
             abandoned.status,
-            Harness::wait_of(&abandoned)
+            Harness::wait_of(&abandoned),
+            abandoned.error.as_deref()
         ),
-        (&waiting.id, WorkflowNodeStatus::Cancelled, None)
+        (
+            &waiting.id,
+            WorkflowNodeStatus::Cancelled,
+            None,
+            Some(r#"{"reason":"retry_abandoned"}"#)
+        )
+    );
+    assert_eq!(h.rows_of("loop")[0].status, WorkflowNodeStatus::Running);
+    assert_eq!(
+        loop_rounds(&h, &loop_old),
+        vec![
+            (1, WorkflowScopeStatus::Succeeded),
+            (2, WorkflowScopeStatus::Running)
+        ]
     );
     h.wake(&waiting.id, 11_000);
-    assert_eq!(h.dispatched("writer").len(), 1);
+    assert_eq!(h.dispatched("writer").len(), 2);
 
+    // The parked Loop row does not block a resume, and the preview agrees with the engine.
+    let preview = super::rollback::preview(&h.pool, h.temp.path(), &h.run_id).unwrap();
+    assert!(preview.resumable, "{preview:?}");
+    assert_eq!(
+        preview
+            .failed_nodes
+            .iter()
+            .map(|node| (node.node_id.as_str(), node.resume_unit_node_id.as_deref()))
+            .collect::<Vec<_>>(),
+        vec![("a", None), ("writer", Some("loop"))]
+    );
+    assert_eq!(
+        preview.node_files_unavailable_reason.as_deref(),
+        Some("composite_region")
+    );
+
+    h.set_now(20_000);
     assert_eq!(
         h.engine.resume_from_failure(&h.run_id).unwrap(),
         ResumeWorkflowRunResult::Resumed
     );
+    let loop_new = h.rows_of("loop").pop().unwrap();
+    assert_ne!(loop_new.id, loop_old);
+    assert_eq!(loop_new.status, WorkflowNodeStatus::Running);
     assert_eq!(
-        (h.dispatched("a").len(), h.dispatched("writer").len()),
-        (2, 2)
+        loop_rounds(&h, &loop_old),
+        vec![
+            (1, WorkflowScopeStatus::Succeeded),
+            (2, WorkflowScopeStatus::Cancelled)
+        ]
+    );
+    assert_eq!(
+        loop_rounds(&h, &loop_new.id),
+        vec![(1, WorkflowScopeStatus::Running)]
+    );
+    // Round 1's success, round 2's replaced attempt and its abandoned wait are all history.
+    assert_eq!(
+        (deleted_rows(&h, "writer"), deleted_rows(&h, "entry")),
+        (3, 2)
     );
     let writer = h.running("writer");
+    assert!(writer.scope_id != round_one.scope_id && writer.scope_id != round_two.scope_id);
+    assert_eq!(NodeAutoRetry::from_payload(writer.payload.as_deref()), None);
     assert_eq!(
-        (
-            writer.scope_id.clone(),
-            NodeAutoRetry::from_payload(writer.payload.as_deref())
-        ),
-        (waiting.scope_id.clone(), None)
+        (h.dispatched("a").len(), h.dispatched("writer").len()),
+        (2, 3)
     );
-    h.complete(&writer.id, "done", 20_000);
-    h.complete(&h.running("a").id, "a done", 21_000);
+
+    h.complete(&writer.id, "done", 21_000);
+    h.complete(&h.running("a").id, "a done", 22_000);
+    assert_eq!(h.rows_of("loop")[0].status, WorkflowNodeStatus::Succeeded);
     assert_eq!(h.run().status, WorkflowRunStatus::Succeeded);
 }
 

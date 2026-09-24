@@ -58,7 +58,9 @@ pub use ports::{
     UpdateWorkflowRunInputResult, WorkflowNodeRunIdGenerator, WorkflowRunEngineRepository,
     WorkflowRunInvalidationPublisher, WorkflowRunWorkspaceInitializer,
 };
-pub use region::{resume_clear_node_ids, resume_unit_owner_id, running_row_blocks_resume};
+pub use region::{
+    resume_clear_node_ids, resume_unit_member_ids, resume_unit_owner_id, running_row_blocks_resume,
+};
 pub use retry::{
     AUTO_RETRY_KEY, AgentRetryPolicy, BeginNodeRetryResult, NoRetryTimer, NodeAutoRetry,
     NodeRetryToSchedule, NodeRetryWait, RETRY_WAIT_KEY, ScheduleNodeRetryResult,

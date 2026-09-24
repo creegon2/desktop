@@ -11,7 +11,8 @@ use gitlancer::{
 };
 use ora_application::{
     ApplicationError, FileChange, NodeType, WorkflowGraph, WorkflowRepository,
-    WorkflowRunEngineRepository, resume_unit_owner_id, running_row_blocks_resume,
+    WorkflowRunEngineRepository, resume_unit_member_ids, resume_unit_owner_id,
+    running_row_blocks_resume,
 };
 use ora_contracts::{
     EmptyErrorParams, PreviewWorkflowRunResumeRequest, PreviewWorkflowRunResumeResponse,
@@ -130,10 +131,8 @@ pub(super) fn plan_rollback(
     for node in &failed {
         if let Some(owner) = node.resume_unit_node_id.as_deref() {
             unit_ids.insert(owner.to_string());
-            if let Some(graph) = graph.as_ref()
-                && let Some(region) = graph.region(owner)
-            {
-                unit_ids.extend(region.member_ids.iter().cloned());
+            if let Some(graph) = graph.as_ref() {
+                unit_ids.extend(resume_unit_member_ids(graph, owner));
             }
         } else {
             unit_ids.insert(node.node_id.clone());
