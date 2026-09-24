@@ -350,7 +350,16 @@ export type WorkflowNodeFailedAttempt = {
    * Failure kind (snake_case, as in `error_detail.kind`).
    */
   kind: string;
+  /**
+   * Top-level failure message; for session failures this is generic, and the agent's own
+   * reason is in `source_chain`.
+   */
   message: string;
+  /**
+   * Source chain of the originating error, outermost first (as in
+   * `error_detail.source_chain`); empty when the engine raised the failure itself.
+   */
+  sourceChain: Array<string>;
   /**
    * Unix millis the failure was recorded.
    */
