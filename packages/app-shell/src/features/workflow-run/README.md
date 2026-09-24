@@ -58,7 +58,7 @@ Keep these stacks separate — shared chrome only where noted.
     kind, message, the innermost `sourceChain` entry with the full chain in a
     disclosure, time, round, and — only where the detail proves it — whether an
     automatic retry or a manual resume replaced the attempt, or whether it ran
-    before a restart. A failed row started by automatic retry `n` adds "retried
+    before a "Run again from start". A failed row started by automatic retry `n` adds "retried
     automatically n times" next to the resume hint; a wait the run abandoned
     shows a plain note instead of the raw `retry_abandoned` error.
   - **Result act**: when the run is terminal and Theater focus is not pinned
