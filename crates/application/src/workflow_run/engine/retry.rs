@@ -34,6 +34,23 @@ pub const MAX_RETRY_WAIT_SECONDS: u64 = 600;
 pub const RETRY_WAIT_KEY: &str = "retry_wait";
 /// Node-run payload key of an automatic attempt's [`NodeAutoRetry`].
 pub const AUTO_RETRY_KEY: &str = "auto_retry";
+/// Node-run payload key listing the earlier attempts of an automatic-retry chain; see
+/// [`retry_chain_from_payload`].
+pub const RETRY_CHAIN_KEY: &str = "retry_chain";
+
+/// Reads `payload.retry_chain` of an attempt an automatic retry started: the node-run ids of the
+/// earlier attempts of the same chain (same node and round, since the last start, restart, or
+/// resume), oldest first. Empty for any other row.
+///
+/// A resume after the chain is exhausted treats the chain as one unit: rollback restores the
+/// worktree from the first attempt's checkpoint and covers the files every attempt changed.
+pub fn retry_chain_from_payload(payload: Option<&str>) -> Vec<String> {
+    payload
+        .and_then(|payload| serde_json::from_str::<Map<String, Value>>(payload).ok())
+        .and_then(|mut payload| payload.remove(RETRY_CHAIN_KEY))
+        .and_then(|chain| serde_json::from_value(chain).ok())
+        .unwrap_or_default()
+}
 
 /// The automatic retry policy of one agent node (`agentConfig.retry`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

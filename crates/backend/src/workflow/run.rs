@@ -24,6 +24,8 @@ mod resume_tests;
 #[cfg(test)]
 mod retry_composite_tests;
 #[cfg(test)]
+mod retry_rollback_tests;
+#[cfg(test)]
 mod retry_tests;
 mod retry_timer;
 #[cfg(test)]

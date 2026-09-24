@@ -5,8 +5,8 @@ use super::failure_detail::{deleted_attempt_count, persist_failed_node_run};
 use super::{SqliteWorkflowRunEngineRepository, engine_repository_error_from_database};
 use ora_application::{
     AUTO_RETRY_KEY, BeginNodeRetryResult, NodeAutoRetry, NodeFailure, NodeRetryToSchedule,
-    NodeRetryWait, RETRY_WAIT_KEY, RepositoryError, ScheduleNodeRetryResult,
-    WorkflowRetryRepository,
+    NodeRetryWait, RETRY_CHAIN_KEY, RETRY_WAIT_KEY, RepositoryError, ScheduleNodeRetryResult,
+    WorkflowRetryRepository, retry_chain_from_payload,
 };
 use ora_domain::{WorkflowNodeRunId, WorkflowNodeStatus, WorkflowRunStatus};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
@@ -94,9 +94,14 @@ impl WorkflowRetryRepository for SqliteWorkflowRunEngineRepository {
                     retry: retry.retry,
                     max_retries: retry.max_retries,
                 };
+                // The chain links every attempt since the last manual action, so a resume after
+                // exhaustion can roll back all of them as one unit.
+                let mut chain = retry_chain_from_payload(payload.as_deref());
+                chain.push(failed_node_run_id.to_string());
                 let payload = Value::Object(Map::from_iter([
                     (RETRY_WAIT_KEY.to_string(), serde_json::to_value(&wait)?),
                     (AUTO_RETRY_KEY.to_string(), serde_json::to_value(marker)?),
+                    (RETRY_CHAIN_KEY.to_string(), serde_json::to_value(chain)?),
                 ]));
                 // `started_at` stays NULL until the wait elapses; the row is `Running` so every
                 // scheduling, cancel, and boot-sweep rule already treats it as in flight.

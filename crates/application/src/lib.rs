@@ -76,9 +76,9 @@ pub use workflow_run::{
     LoopRoundError, LoopRoundExecutionState, LoopRoundToStart, LoopVariable,
     MaterializedSkillBinding, NoRetryTimer, NoRunInvalidations, NodeAutoRetry, NodeExecutor,
     NodeFailure, NodeFailureDetail, NodeFailureKind, NodeRetryToSchedule, NodeRetryWait,
-    NodeRunToStart, NodeType, RETRY_WAIT_KEY, RenameWorkflowRunHandler, RestartWorkflowRunResult,
-    ResumeWorkflowRunResult, RoundOutcome, ScheduleNodeRetryResult, SkillDiscoveryRoots,
-    SkillMaterializationReceipt, SnapshotIncompatibility, SnapshotSwitchPlan,
+    NodeRunToStart, NodeType, RETRY_CHAIN_KEY, RETRY_WAIT_KEY, RenameWorkflowRunHandler,
+    RestartWorkflowRunResult, ResumeWorkflowRunResult, RoundOutcome, ScheduleNodeRetryResult,
+    SkillDiscoveryRoots, SkillMaterializationReceipt, SnapshotIncompatibility, SnapshotSwitchPlan,
     StartPrerequisitesError, StartWorkflowRunResult, StructuredOutputError, StructuredTextExposure,
     UnknownNodeType, UpdateWorkflowRunInputResult, UuidWorkflowNodeRunIdGenerator,
     UuidWorkflowRunIdGenerator, VariableTemplateError, WorkflowGraph, WorkflowGraphNode,
@@ -89,7 +89,7 @@ pub use workflow_run::{
     WorkflowRunWorkspaceInitializer, WorkflowValidationError, WorkflowVariablePool,
     WorkflowVariablePoolError, WorkspaceRepository, extract_json_object, plan_snapshot_switch,
     render_variable_template, resume_clear_node_ids, resume_unit_member_ids, resume_unit_owner_id,
-    running_row_blocks_resume, validate_against_schema,
+    retry_chain_from_payload, running_row_blocks_resume, validate_against_schema,
 };
 pub use workspace_diff::{
     CommitWorkspaceChangesHandler, CommitWorkspaceGitRequest, GitWorkspaceDiffReader,

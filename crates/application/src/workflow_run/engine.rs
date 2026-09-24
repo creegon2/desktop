@@ -63,8 +63,8 @@ pub use region::{
 };
 pub use retry::{
     AUTO_RETRY_KEY, AgentRetryPolicy, BeginNodeRetryResult, NoRetryTimer, NodeAutoRetry,
-    NodeRetryToSchedule, NodeRetryWait, RETRY_WAIT_KEY, ScheduleNodeRetryResult,
-    WorkflowRetryRepository, WorkflowRetryTimer,
+    NodeRetryToSchedule, NodeRetryWait, RETRY_CHAIN_KEY, RETRY_WAIT_KEY, ScheduleNodeRetryResult,
+    WorkflowRetryRepository, WorkflowRetryTimer, retry_chain_from_payload,
 };
 pub use skill_delivery::{
     AgentSkillDelivery, AgentSkillDeliveryError, AgentSkillDeliveryProvider,

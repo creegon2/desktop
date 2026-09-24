@@ -157,7 +157,7 @@ export type PreviewWorkflowRunResumeResponse = {
   resumable: boolean;
   failedNodes: Array<ResumeFailedNodePreview>;
   /**
-   * Every failed node has a checkpoint.
+   * Every failed node has a checkpoint, and so did every attempt of its retry chain that ran.
    */
   nodeFilesAvailable: boolean;
   /**
@@ -206,6 +206,11 @@ export type RestartWorkflowRunResponse = { run: WorkflowRun };
 
 /**
  * Preview of one failed or cancelled node that would be re-run.
+ *
+ * When automatic retries replaced earlier attempts of the node since the last start, restart,
+ * or resume, the whole chain is one rollback unit: `started_at` and `checkpoint` are those of
+ * its first attempt, `node_file_changes` lists the files every attempt changed (line counts
+ * summed), and `checkpoint_error` is the first one any attempt recorded.
  */
 export type ResumeFailedNodePreview = {
   nodeId: string;
@@ -214,7 +219,7 @@ export type ResumeFailedNodePreview = {
   checkpoint: string | null;
   checkpointError: string | null;
   /**
-   * What the node itself recorded (`payload.file_changes` of the failed run).
+   * What the node itself recorded (`payload.file_changes` of the failed attempts).
    */
   nodeFileChanges: Array<WorkflowFileChange>;
   /**

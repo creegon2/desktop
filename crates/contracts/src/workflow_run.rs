@@ -436,6 +436,11 @@ pub struct WorkflowFileChange {
 }
 
 /// Preview of one failed or cancelled node that would be re-run.
+///
+/// When automatic retries replaced earlier attempts of the node since the last start, restart,
+/// or resume, the whole chain is one rollback unit: `started_at` and `checkpoint` are those of
+/// its first attempt, `node_file_changes` lists the files every attempt changed (line counts
+/// summed), and `checkpoint_error` is the first one any attempt recorded.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "workflow-run.ts")]
@@ -445,7 +450,7 @@ pub struct ResumeFailedNodePreview {
     pub started_at: Option<i64>,
     pub checkpoint: Option<String>,
     pub checkpoint_error: Option<String>,
-    /// What the node itself recorded (`payload.file_changes` of the failed run).
+    /// What the node itself recorded (`payload.file_changes` of the failed attempts).
     pub node_file_changes: Vec<WorkflowFileChange>,
     /// Live diff of the worktree against this node's checkpoint (includes edits made after the failure).
     pub changed_since_checkpoint: Vec<WorkflowFileChange>,
@@ -463,7 +468,7 @@ pub struct PreviewWorkflowRunResumeResponse {
     /// Run is failed/cancelled, no running node, and at least one failed/cancelled node.
     pub resumable: bool,
     pub failed_nodes: Vec<ResumeFailedNodePreview>,
-    /// Every failed node has a checkpoint.
+    /// Every failed node has a checkpoint, and so did every attempt of its retry chain that ran.
     pub node_files_available: bool,
     /// `"no_file_changes"` when a failed node has no checkpoint / recorded changes;
     /// `"composite_region"` when the resume unit is a composite (Iteration or Loop).
