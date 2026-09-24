@@ -140,8 +140,9 @@ pub struct NodeFailureDetail {
     /// row (same `run_id` + `node_id`, `is_deleted = 1`). Filled in by the repository.
     pub attempt: u32,
     pub resumable: bool,
-    /// Whether a same-version rerun of this node injects this failure into the agent prompt;
-    /// mirrors `NodeFailureKind::inject_into_prompt`.
+    /// Whether a same-version rerun of this node injects this failure into the agent prompt:
+    /// `NodeFailureKind::inject_into_prompt` and the run's `inject_last_failure` switch. Rows
+    /// written before the switch was taken into account mirror the kind alone.
     pub injects_previous_failure: bool,
     /// Whether this kind of failure is retried automatically when the node's retry policy is on;
     /// mirrors `NodeFailureKind::auto_retry`. The run view uses it to say why an agent with retry

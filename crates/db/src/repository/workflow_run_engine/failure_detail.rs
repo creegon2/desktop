@@ -62,11 +62,20 @@ pub(super) fn persist_failed_node_run(
     current_payload: Option<&str>,
     now: i64,
 ) -> Result<(), crate::DatabaseError> {
-    let (iteration, scope_id): (Option<u32>, String) = transaction.query_row(
-        "SELECT iteration, scope_id FROM workflow_node_runs WHERE id = ?1 AND is_deleted = 0",
-        params![node_run_id],
-        |row| Ok((row.get(0)?, row.get(1)?)),
-    )?;
+    // `injects_previous_failure` must say what a later attempt will actually be told, and a run
+    // created with `injectLastFailure` off tells it nothing. Payloads without the key (older
+    // runs) inject, matching `WorkflowRunPayload`'s default.
+    let (iteration, scope_id, run_injects_failures): (Option<u32>, String, bool) = transaction
+        .query_row(
+            "SELECT node.iteration, node.scope_id,
+                    json_type(CASE WHEN json_valid(run.payload) THEN run.payload END,
+                              '$.injectLastFailure') IS NOT 'false'
+             FROM workflow_node_runs node
+             LEFT JOIN workflow_runs run ON run.id = node.run_id
+             WHERE node.id = ?1 AND node.is_deleted = 0",
+            params![node_run_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?;
     let attempt = deleted_attempt_count(transaction, run_id, node_id, iteration, &scope_id)?
         .saturating_add(1);
     let detail = NodeFailureDetail {
@@ -75,7 +84,7 @@ pub(super) fn persist_failed_node_run(
         source_chain: failure.source_chain.clone(),
         attempt,
         resumable: failure.kind.resumable(),
-        injects_previous_failure: failure.kind.inject_into_prompt(),
+        injects_previous_failure: failure.kind.inject_into_prompt() && run_injects_failures,
         auto_retryable: Some(failure.kind.auto_retry()),
         recorded_at: now,
     };

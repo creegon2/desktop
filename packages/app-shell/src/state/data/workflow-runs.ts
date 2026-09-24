@@ -902,10 +902,10 @@ function parseErrorDetail(value: unknown): WorkflowNodeErrorDetail | undefined {
       : [],
     attempt: typeof detail.attempt === "number" ? detail.attempt : 1,
     resumable: typeof detail.resumable === "boolean" ? detail.resumable : true,
-    injectsPreviousFailure:
-      typeof detail.injects_previous_failure === "boolean"
-        ? detail.injects_previous_failure
-        : false,
+    // Rows written before 2026-09-17 lack it; absent must not read as "the run injects nothing".
+    ...(typeof detail.injects_previous_failure === "boolean"
+      ? { injectsPreviousFailure: detail.injects_previous_failure }
+      : {}),
     // Older rows lack the field; leaving it absent keeps the view from guessing.
     ...(typeof detail.auto_retryable === "boolean"
       ? { autoRetryable: detail.auto_retryable }

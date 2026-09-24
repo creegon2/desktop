@@ -251,7 +251,9 @@ failed or cancelled idle run:
 | `structured_output`, `agent_refusal`, `prompt_template`, `missing_agent_ref`, `missing_skill_materialization`, `invalid_run_payload`, `unknown_stop_reason`, `multiple_outputs`, `condition_evaluation` | false       |
 
 Only agent-behaviour failures are injected into a later prompt (`injects_previous_failure`):
-`structured_output`, `agent_refusal`, `unknown_stop_reason`, `multiple_outputs`.
+`structured_output`, `agent_refusal`, `unknown_stop_reason`, `multiple_outputs`. A run created
+with `injectLastFailure: false` injects nothing, so its failures record
+`injects_previous_failure: false` for every kind and the run view does not promise injection.
 
 Resume soft-deletes the failed or cancelled node runs and all of their descendants
 (`is_deleted = 1`) and reschedules from the surviving state. Attempt numbering counts those

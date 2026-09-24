@@ -581,6 +581,55 @@ fn every_failure_records_whether_its_kind_is_retried_automatically() {
     }
 }
 
+/// A recorded failure promises injection only when a later attempt will really be told about
+/// it: an agent-answer failure in a run created with `injectLastFailure` off records `false`
+/// (the run view must not promise injection there), and a session failure never records `true`.
+/// A payload without the key is an older run, which injects.
+#[test]
+fn recorded_failures_promise_injection_only_when_the_run_injects() {
+    let cases = [
+        (NodeFailureKind::StructuredOutput, None, true),
+        (NodeFailureKind::StructuredOutput, Some(true), true),
+        (NodeFailureKind::StructuredOutput, Some(false), false),
+        (NodeFailureKind::Session, None, false),
+        (NodeFailureKind::Session, Some(true), false),
+        (NodeFailureKind::Session, Some(false), false),
+    ];
+    for (kind, switch, injects) in cases {
+        // Both the retried path and the path that fails the run record the detail.
+        for policy in [json!({}), retry(false, 0, 0)] {
+            let h = Harness::start(&linear(policy.clone()));
+            match switch {
+                Some(on) => h.set_run_payload_key("injectLastFailure", json!(on)),
+                None => {
+                    rusqlite::Connection::open(h.temp.path().join("repository.sqlite3"))
+                        .unwrap()
+                        .execute(
+                            "UPDATE workflow_runs SET payload = json_remove(payload, '$.injectLastFailure') WHERE id = ?1",
+                            rusqlite::params![h.run_id.as_ref()],
+                        )
+                        .unwrap();
+                    assert!(!h.run().payload.unwrap().contains("injectLastFailure"));
+                }
+            }
+            let first = h.running("a");
+            h.fail(&first.id, kind, 1_000);
+            let recorded = h
+                .detail()
+                .failed_attempts
+                .into_iter()
+                .chain(h.rows_of("a"))
+                .find(|row| row.id == first.id)
+                .unwrap();
+            assert_eq!(
+                Harness::error_detail(&recorded)["injects_previous_failure"],
+                json!(injects),
+                "{kind:?} with injectLastFailure {switch:?} under {policy}"
+            );
+        }
+    }
+}
+
 /// Test 4: a disabled policy, a zero budget, and interactive nodes never retry; a node without
 /// `retry` gets the default policy.
 #[test]

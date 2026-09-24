@@ -297,6 +297,8 @@ export const workflowRunTranslations = {
     "workflowRun.errorKind.structured_output": "结构化输出不合格",
     "workflowRun.errorHint.structured_output":
       "智能体的回复不符合输出结构；可直接续跑让它带着失败信息重试，或调整提示词/输出结构后发布新版本",
+    "workflowRun.errorHintWithoutInjection.structured_output":
+      "智能体的回复不符合输出结构；可直接续跑让它按原提示词重试，或调整提示词/输出结构后发布新版本",
     "workflowRun.errorKind.missing_skill_materialization": "技能未就绪",
     "workflowRun.errorHint.missing_skill_materialization":
       "重新发布工作流以重新生成技能文件",
@@ -315,6 +317,8 @@ export const workflowRunTranslations = {
     "workflowRun.errorKind.agent_refusal": "智能体拒绝了请求",
     "workflowRun.errorHint.agent_refusal":
       "智能体拒绝了请求；可直接续跑让它带着失败信息重试，或调整提示词后发布新版本",
+    "workflowRun.errorHintWithoutInjection.agent_refusal":
+      "智能体拒绝了请求；可直接续跑让它按原提示词重试，或调整提示词后发布新版本",
     "workflowRun.errorKind.unknown_stop_reason": "未知的停止原因",
     "workflowRun.errorHint.unknown_stop_reason":
       "智能体以本版本 Ora 不认识的方式停止，请升级 Ora 或更换智能体",
@@ -332,6 +336,8 @@ export const workflowRunTranslations = {
       "这类失败通常源于工作流本身，直接续跑很可能再次失败；建议修改工作流后重新运行。",
     "workflowRun.errorInjectedResumeHint":
       "同版本续跑时，Ora 会把这次失败的类型、原因和上次输出告诉智能体让它重试；若仍失败，再修改工作流并发布新版本。",
+    "workflowRun.errorResumeWithoutInjectionHint":
+      "本次运行关闭了失败信息注入：同版本续跑时，智能体不会得知这次失败的原因；若仍失败，再修改工作流并发布新版本。",
     "workflowRun.injectedFailure.title": "本次尝试注入的上次失败信息",
     "workflowRun.resumeFromTopHint": "可在顶部点「从失败处继续」重跑这个节点",
     "workflowRun.nodeFromOlderSnapshotHint":
@@ -688,6 +694,8 @@ export const workflowRunTranslations = {
     "workflowRun.errorKind.structured_output": "Structured output invalid",
     "workflowRun.errorHint.structured_output":
       "The agent's reply did not match the output schema; resume to let it retry with the failure context, or adjust the prompt/schema and publish a new version",
+    "workflowRun.errorHintWithoutInjection.structured_output":
+      "The agent's reply did not match the output schema; resume to let it retry with the same prompt, or adjust the prompt/schema and publish a new version",
     "workflowRun.errorKind.missing_skill_materialization":
       "Skill not materialized",
     "workflowRun.errorHint.missing_skill_materialization":
@@ -711,6 +719,8 @@ export const workflowRunTranslations = {
     "workflowRun.errorKind.agent_refusal": "Agent refused the request",
     "workflowRun.errorHint.agent_refusal":
       "The agent refused; resume to let it retry with the failure context, or adjust the prompt and publish a new version",
+    "workflowRun.errorHintWithoutInjection.agent_refusal":
+      "The agent refused; resume to let it retry with the same prompt, or adjust the prompt and publish a new version",
     "workflowRun.errorKind.unknown_stop_reason": "Unknown stop reason",
     "workflowRun.errorHint.unknown_stop_reason":
       "The agent stopped in a way this Ora version cannot interpret; upgrade Ora or change the agent",
@@ -730,6 +740,8 @@ export const workflowRunTranslations = {
       "This kind of failure usually comes from the workflow itself; resuming as-is will likely fail again. Edit the workflow and run it again.",
     "workflowRun.errorInjectedResumeHint":
       "Resuming on the same version tells the agent this failure's kind, reason and previous output so it can retry; if it still fails, revise the workflow and publish a new version.",
+    "workflowRun.errorResumeWithoutInjectionHint":
+      "This run does not pass failures to the agent: resuming on the same version will not tell it why this attempt failed; if it still fails, revise the workflow and publish a new version.",
     "workflowRun.injectedFailure.title":
       "Previous-failure context injected into this attempt",
     "workflowRun.resumeFromTopHint":

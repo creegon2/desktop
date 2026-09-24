@@ -445,6 +445,7 @@ describe("buildDisplayRun retry outcome", () => {
                 source_chain: ["agent session failed", "prompt timed out"],
                 attempt: 3,
                 resumable: true,
+                injects_previous_failure: false,
                 recorded_at: BASE_MS + 40_000,
               },
             }),

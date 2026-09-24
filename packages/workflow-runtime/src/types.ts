@@ -354,7 +354,12 @@ export interface WorkflowNodeErrorDetail {
   sourceChain: string[];
   attempt: number;
   resumable: boolean;
-  injectsPreviousFailure: boolean;
+  /**
+   * Whether a same-version resume tells the agent about this failure: the kind is injectable and
+   * the run was created with failure injection on. Absent on rows written before the backend
+   * recorded the field.
+   */
+  injectsPreviousFailure?: boolean;
   /**
    * Whether this kind of failure is retried automatically when the node's retry policy is on.
    * Absent on rows the backend wrote before it recorded the field.

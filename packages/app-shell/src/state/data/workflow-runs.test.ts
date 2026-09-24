@@ -560,7 +560,8 @@ describe("buildDisplayRun", () => {
     });
   });
 
-  it("defaults injectsPreviousFailure to false when the payload key is absent", () => {
+  // Rows written before the backend recorded the flag must not read as "injection switched off".
+  it("leaves injectsPreviousFailure absent when the payload key is absent", () => {
     const withError = {
       ...detail,
       nodes: [
@@ -577,9 +578,10 @@ describe("buildDisplayRun", () => {
       ],
     };
     const display = buildDisplayRun(withError, GRAPH);
-    expect(display.nodeStates.explore.errorDetail?.injectsPreviousFailure).toBe(
-      false,
-    );
+    expect(display.nodeStates.explore.errorDetail).toBeDefined();
+    expect(
+      display.nodeStates.explore.errorDetail?.injectsPreviousFailure,
+    ).toBeUndefined();
   });
 
   it.each([

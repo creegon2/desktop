@@ -284,11 +284,11 @@ describe("RunActInspector failure detail", () => {
     await appI18n.changeLanguage("zh-CN");
     renderInspector({
       status: "failed",
-      errorMessage: "agent node review structured output failed: not json",
+      errorMessage: "prompt references a missing variable",
       errorDetail: {
-        kind: "structured_output",
-        message: "agent node review structured output failed: not json",
-        sourceChain: ["not json"],
+        kind: "prompt_template",
+        message: "prompt references a missing variable",
+        sourceChain: [],
         attempt: 2,
         resumable: false,
         injectsPreviousFailure: false,
@@ -296,11 +296,9 @@ describe("RunActInspector failure detail", () => {
       },
     });
 
-    expect(await screen.findByText("结构化输出不合格")).toBeInTheDocument();
+    expect(await screen.findByText("提示词模板无法渲染")).toBeInTheDocument();
     expect(
-      screen.getByText(
-        "智能体的回复不符合输出结构；可直接续跑让它带着失败信息重试，或调整提示词/输出结构后发布新版本",
-      ),
+      screen.getByText("修正模板中引用的变量后发布新版本"),
     ).toBeInTheDocument();
     expect(screen.getByText("第 2 次尝试")).toBeInTheDocument();
     expect(
@@ -309,7 +307,7 @@ describe("RunActInspector failure detail", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("agent node review structured output failed: not json"),
+      screen.getByText("prompt references a missing variable"),
     ).toBeInTheDocument();
   });
 
@@ -363,10 +361,119 @@ describe("RunActInspector failure detail", () => {
       ),
     ).toBeInTheDocument();
     expect(
+      screen.getByText(
+        "智能体的回复不符合输出结构；可直接续跑让它带着失败信息重试，或调整提示词/输出结构后发布新版本",
+      ),
+    ).toBeInTheDocument();
+    expect(
       screen.queryByText(
         "这类失败通常源于工作流本身，直接续跑很可能再次失败；建议修改工作流后重新运行。",
       ),
     ).not.toBeInTheDocument();
+    expect(screen.queryByText(/关闭了失败信息注入/u)).not.toBeInTheDocument();
+  });
+
+  // The run was created with failure injection off, so the backend recorded
+  // `injects_previous_failure: false` for a kind that is normally injected.
+  it("does not promise injection when the run switched it off", async () => {
+    await appI18n.changeLanguage("zh-CN");
+    renderInspector({
+      status: "failed",
+      errorMessage: "agent node review structured output failed: not json",
+      errorDetail: {
+        kind: "structured_output",
+        message: "agent node review structured output failed: not json",
+        sourceChain: ["not json"],
+        attempt: 2,
+        resumable: false,
+        injectsPreviousFailure: false,
+        recordedAt: 50,
+      },
+    });
+
+    expect(
+      await screen.findByText(
+        "智能体的回复不符合输出结构；可直接续跑让它按原提示词重试，或调整提示词/输出结构后发布新版本",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "本次运行关闭了失败信息注入：同版本续跑时，智能体不会得知这次失败的原因；若仍失败，再修改工作流并发布新版本。",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/带着失败信息/u)).not.toBeInTheDocument();
+    expect(screen.queryByText(/告诉智能体/u)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "这类失败通常源于工作流本身，直接续跑很可能再次失败；建议修改工作流后重新运行。",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("makes no claim about the injection switch for a row recorded without the flag", async () => {
+    await appI18n.changeLanguage("zh-CN");
+    renderInspector({
+      status: "failed",
+      errorMessage: "agent node review structured output failed: not json",
+      errorDetail: {
+        kind: "structured_output",
+        message: "agent node review structured output failed: not json",
+        sourceChain: ["not json"],
+        attempt: 1,
+        resumable: false,
+        recordedAt: 50,
+      },
+    });
+
+    expect(await screen.findByText("结构化输出不合格")).toBeInTheDocument();
+    expect(screen.queryByText(/关闭了失败信息注入/u)).not.toBeInTheDocument();
+    expect(screen.queryByText(/按原提示词/u)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "这类失败通常源于工作流本身，直接续跑很可能再次失败；建议修改工作流后重新运行。",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("words the agent_refusal hints by the run's injection switch in English", async () => {
+    await appI18n.changeLanguage("en-US");
+    const refusal = (injectsPreviousFailure: boolean) =>
+      ({
+        status: "failed",
+        errorMessage: "agent refused",
+        errorDetail: {
+          kind: "agent_refusal",
+          message: "agent refused",
+          sourceChain: [],
+          attempt: 1,
+          resumable: false,
+          injectsPreviousFailure,
+          recordedAt: 50,
+        },
+      }) satisfies GraphWorkflowNodeState;
+    const injected =
+      "The agent refused; resume to let it retry with the failure context, or adjust the prompt and publish a new version";
+    const notInjected =
+      "The agent refused; resume to let it retry with the same prompt, or adjust the prompt and publish a new version";
+    const offLine =
+      "This run does not pass failures to the agent: resuming on the same version will not tell it why this attempt failed; if it still fails, revise the workflow and publish a new version.";
+
+    const on = renderInspector(refusal(true));
+    expect(await screen.findByText(injected)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Resuming on the same version tells the agent this failure's kind, reason and previous output so it can retry; if it still fails, revise the workflow and publish a new version.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(notInjected)).not.toBeInTheDocument();
+    expect(screen.queryByText(offLine)).not.toBeInTheDocument();
+    on.unmount();
+
+    renderInspector(refusal(false));
+    expect(await screen.findByText(notInjected)).toBeInTheDocument();
+    expect(screen.getByText(offLine)).toBeInTheDocument();
+    expect(screen.queryByText(injected)).not.toBeInTheDocument();
+    expect(screen.queryByText(/tells the agent/u)).not.toBeInTheDocument();
   });
 
   it("renders injected previous-failure context in a collapsed details element", async () => {

@@ -37,7 +37,11 @@ import type {
   WorkflowNodeFileChange,
   WorkflowVariableValueType,
 } from "@ora/workflow-runtime";
-import { NODE_FAILURE_KINDS } from "./node-failure-kinds";
+import {
+  HINT_PROMISES_INJECTION_KINDS,
+  NODE_FAILURE_KINDS,
+  PROMPT_INJECTED_FAILURE_KINDS,
+} from "./node-failure-kinds";
 
 const KNOWN_NODE_FAILURE_KINDS = new Set<string>(NODE_FAILURE_KINDS);
 
@@ -320,6 +324,12 @@ function RunActInspectorPanel({
     agentConfig !== undefined &&
     resolveAgentRetryDisplay(agentConfig).kind === "enabled" &&
     state.errorDetail?.autoRetryable === false;
+  // A kind that is normally injected but was recorded without injection comes from a run
+  // created with failure injection off: no hint may promise the agent hears about it.
+  const injectionSwitchedOff =
+    state.errorDetail != null &&
+    PROMPT_INJECTED_FAILURE_KINDS.has(state.errorDetail.kind) &&
+    state.errorDetail.injectsPreviousFailure === false;
   const canEdit = editable && onPatchNode !== undefined;
   const promptLabel = nodeType.configFields.includes("initialPrompt")
     ? t("settings.workflow.field.initialPrompt")
@@ -642,7 +652,14 @@ function RunActInspectorPanel({
                     </p>
                     {KNOWN_NODE_FAILURE_KINDS.has(state.errorDetail.kind) && (
                       <p>
-                        {t(`workflowRun.errorHint.${state.errorDetail.kind}`)}
+                        {t(
+                          injectionSwitchedOff &&
+                            HINT_PROMISES_INJECTION_KINDS.has(
+                              state.errorDetail.kind,
+                            )
+                            ? `workflowRun.errorHintWithoutInjection.${state.errorDetail.kind}`
+                            : `workflowRun.errorHint.${state.errorDetail.kind}`,
+                        )}
                       </p>
                     )}
                     <p>
@@ -657,8 +674,12 @@ function RunActInspectorPanel({
                       state.errorDetail.injectsPreviousFailure === true && (
                         <p>{t("workflowRun.errorInjectedResumeHint")}</p>
                       )}
+                    {injectionSwitchedOff && (
+                      <p>{t("workflowRun.errorResumeWithoutInjectionHint")}</p>
+                    )}
                     {state.errorDetail.resumable === false &&
-                      state.errorDetail.injectsPreviousFailure === false && (
+                      state.errorDetail.injectsPreviousFailure !== true &&
+                      !injectionSwitchedOff && (
                         <p>{t("workflowRun.errorNotResumableHint")}</p>
                       )}
                   </div>

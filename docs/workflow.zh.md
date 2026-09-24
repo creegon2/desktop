@@ -202,7 +202,9 @@ Start 表单控件与变量类型分离：文本、段落、选择框、数字�
 | `structured_output`、`agent_refusal`、`prompt_template`、`missing_agent_ref`、`missing_skill_materialization`、`invalid_run_payload`、`unknown_stop_reason`、`multiple_outputs`、`condition_evaluation` | false       |
 
 只有智能体自身行为导致的失败会注入后续提示词（`injects_previous_failure`）：
-`structured_output`、`agent_refusal`、`unknown_stop_reason`、`multiple_outputs`。
+`structured_output`、`agent_refusal`、`unknown_stop_reason`、`multiple_outputs`。以
+`injectLastFailure: false` 创建的运行不注入任何失败，所以它的失败无论哪种都记录
+`injects_previous_failure: false`，运行视图也不会承诺注入。
 
 续跑会软删除失败/取消的节点运行及其全部后继（`is_deleted = 1`），再从幸存状态重新调度。
 尝试次数按 `(run_id, node_id, iteration)` 统计软删除前驱（外层行为 `iteration IS NULL`）；
