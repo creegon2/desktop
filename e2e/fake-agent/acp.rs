@@ -38,6 +38,10 @@ const FAIL_TIMES_MARKER: &str = "[fail-times:";
 /// sessions and a restarted plugin process alike.
 const PROMPT_FAILURE_JOURNAL: &str = "prompt_failures.txt";
 
+/// Journal of the text of every prompt this agent was sent, one JSON object per line, so a
+/// workflow test can assert on exactly what a retry asked the agent.
+const PROMPT_TEXT_JOURNAL: &str = "prompts.jsonl";
+
 /// One fake session retained for the life of the plugin process.
 #[derive(Debug, Clone)]
 struct FakeSession {
@@ -310,6 +314,7 @@ impl FakeAcpAgent {
             })
             .collect::<Vec<_>>()
             .join("\n");
+        record_prompt_text(&session_id, &prompt);
         if let Some(error) = planned_prompt_failure(&prompt) {
             return Err(error);
         }
@@ -388,6 +393,21 @@ fn record_acp_call(method: &str, session_id: &str) {
         .open(ACP_JOURNAL)
     {
         let _ = writeln!(file, "{method} {session_id}");
+    }
+}
+
+/// Appends the text of one received prompt to the prompt journal beside this package.
+fn record_prompt_text(session_id: &str, prompt: &str) {
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(PROMPT_TEXT_JOURNAL)
+    {
+        let _ = writeln!(
+            file,
+            "{}",
+            json!({"sessionId": session_id, "prompt": prompt})
+        );
     }
 }
 
