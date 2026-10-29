@@ -180,12 +180,13 @@ impl Fixture {
 
 /// Runs real short rounds and original-result delivery over Go gRPC and durable PostgreSQL.
 #[test]
-#[ignore = "requires explicitly started TestP386JointServer and P386_JOINT_METADATA"]
+#[ignore = "requires explicitly started TestShortRoundsJointServer and ORA_SHORT_ROUNDS_JOINT_METADATA"]
 fn production_worker_yields_and_delivers_original_late_results_to_persistent_go_cloud() {
     ora_logging::initialize_test_clock();
-    let metadata: Value =
-        serde_json::from_slice(&fs::read(std::env::var("P386_JOINT_METADATA").unwrap()).unwrap())
-            .unwrap();
+    let metadata: Value = serde_json::from_slice(
+        &fs::read(std::env::var("ORA_SHORT_ROUNDS_JOINT_METADATA").unwrap()).unwrap(),
+    )
+    .unwrap();
     let root = tempfile::tempdir().unwrap();
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -204,7 +205,7 @@ fn production_worker_yields_and_delivers_original_late_results_to_persistent_go_
                 ("late_failure", true, Some(false)),
                 ("unknown_at_deadline", true, None),
             ] {
-                if std::env::var("P386_JOINT_CASE").is_ok_and(|selected| selected != case) {
+                if std::env::var("ORA_SHORT_ROUNDS_JOINT_CASE").is_ok_and(|selected| selected != case) {
                     continue;
                 }
                 let scene = fixture
@@ -241,7 +242,7 @@ fn production_worker_yields_and_delivers_original_late_results_to_persistent_go_
                             }),
                         },
                         protected_state_directories: Vec::new(),
-                        controller_id: ControllerId::new("p386-joint"),
+                        controller_id: ControllerId::new("short-rounds-joint"),
                         nodes: Vec::new(),
                         session: SessionConfig {
                             io_timeout_ms: 500,
@@ -291,7 +292,7 @@ fn production_worker_yields_and_delivers_original_late_results_to_persistent_go_
                     })
                     .await;
                 println!(
-                    "P386 {case} A={} yield_ms={} reason={} retry_remaining={} B={} B_state={}",
+                    "SHORT_ROUNDS_JOINT {case} A={} yield_ms={} reason={} retry_remaining={} B={} B_state={}",
                     operation,
                     elapsed.as_millis(),
                     expected,
@@ -319,7 +320,7 @@ fn production_worker_yields_and_delivers_original_late_results_to_persistent_go_
                         assert_eq!(unknown["reason"], "clone_result_unknown");
                         assert_eq!(unknown["executions"][0]["id"], original[0]["id"]);
                         assert_eq!(unknown["executions"].as_array().unwrap().len(), 1);
-                        println!("P386 {case} original_execution={} blocked_reason={}", original[0]["id"], unknown["reason"]);
+                        println!("SHORT_ROUNDS_JOINT {case} original_execution={} blocked_reason={}", original[0]["id"], unknown["reason"]);
                     }
                     if let Some(success) = late_result {
                         fixture
@@ -343,7 +344,7 @@ fn production_worker_yields_and_delivers_original_late_results_to_persistent_go_
                         assert_eq!(recovered["executions"].as_array().unwrap().len(), 1);
                         assert_eq!(node.commands.lock().unwrap().len(), 1);
                         println!(
-                            "P386 {case} original_execution={} timeout_then={} result={}",
+                            "SHORT_ROUNDS_JOINT {case} original_execution={} timeout_then={} result={}",
                             original[0]["id"],
                             recovered["state"],
                             recovered["executions"][0]["result"]
