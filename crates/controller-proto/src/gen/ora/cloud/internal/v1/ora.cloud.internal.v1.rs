@@ -1960,7 +1960,8 @@ pub struct DeferOperationRequest {
     pub state: i32,
     #[prost(enumeration="DeferReason", tag="6")]
     pub reason: i32,
-    /// 1 to 3600 seconds.
+    /// 1 to 3600 seconds for generic reasons. Ignored (including zero) for Node unavailable,
+    /// clone pending and clone timeout: Cloud owns their retry policy and durable deadline.
     #[prost(uint32, tag="7")]
     pub retry_seconds: u32,
 }
